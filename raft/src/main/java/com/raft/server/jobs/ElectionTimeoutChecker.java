@@ -17,8 +17,9 @@ public class ElectionTimeoutChecker implements Runnable {
 
     @Override
     public void run() {
-        if (raftServer.getState() != ServerState.LEADER && raftServer.getLastHeardFromLeader() + raftServer.getElectionTimeout() < System.currentTimeMillis()) {
-            logger.info("Starting election");
+        long nanoTime = System.nanoTime();
+        if (raftServer.getState() != ServerState.LEADER && raftServer.getLastHeardFromLeader() + raftServer.getElectionTimeout() * 1000 * 1000 < nanoTime) {
+            logger.info("Starting election, currentTime : " + nanoTime + " Last heard time: " + raftServer.getLastHeardFromLeader() + raftServer.getElectionTimeout() * 1000);
             raftServer.convertToCandidate();
             raftServer.sendVoteRequests();
             raftServer.getScheduler().schedule(new ElectionTimeoutChecker(raftServer), raftServer.generateNewElectionTimeout(), TimeUnit.MILLISECONDS);
@@ -27,5 +28,6 @@ public class ElectionTimeoutChecker implements Runnable {
             raftServer.getScheduler().schedule(new ElectionTimeoutChecker(raftServer), raftServer.generateNewElectionTimeout(), TimeUnit.MILLISECONDS);
         }
         raftServer.resetVotedFor();
+        raftServer.resetVotes();
     }
 }

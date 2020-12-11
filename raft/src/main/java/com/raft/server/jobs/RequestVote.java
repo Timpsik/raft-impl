@@ -1,6 +1,7 @@
 package com.raft.server.jobs;
 
 import com.raft.server.RaftServer;
+import com.raft.server.ServerState;
 import com.raft.server.rpc.RequestVoteRequest;
 import com.raft.server.rpc.RequestVoteResponse;
 import org.apache.logging.log4j.LogManager;
@@ -23,20 +24,25 @@ public class RequestVote implements Runnable {
 
     @Override
     public void run() {
-        RequestVoteRequest r = new RequestVoteRequest(raftServer.getCurrentTerm().get(), raftServer.getServerId(), raftServer.getCommitIndex().get(), raftServer.getLastLogEntryTerm());
+        RequestVoteRequest r = new RequestVoteRequest(raftServer.getCurrentTerm().get(), raftServer.getServerId(), raftServer.getLastApplied().get(), raftServer.getLastLogEntryTerm());
         logger.info("Sending vote request to " + address);
         Socket socket = null;
+        ObjectOutputStream out = null;
+        ObjectInputStream in = null;
         try {
             socket = new Socket(address.split(":")[0], Integer.parseInt(address.split(":")[1]));
-            ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
+            out = new ObjectOutputStream(socket.getOutputStream());
             out.writeObject(r);
-            ObjectInputStream in = new ObjectInputStream(socket.getInputStream());
+            in = new ObjectInputStream(socket.getInputStream());
             RequestVoteResponse response = (RequestVoteResponse) in.readObject();
             if (response.isVoteGranted()) {
                 logger.info("Received vote from " + address);
                 raftServer.addVoteAndCheckWin();
             } else {
                 logger.info("Did not get vote from " + address);
+                if (response.getTerm() > raftServer.getCurrentTerm().get()) {
+                    raftServer.setState(ServerState.FOLLOWER);
+                }
             }
 
         } catch (IOException | ClassNotFoundException e) {
@@ -44,6 +50,12 @@ public class RequestVote implements Runnable {
         } finally {
             if (socket != null) {
                 try {
+                    if (out != null) {
+                        out.close();
+                    }
+                    if (in != null) {
+                        in.close();
+                    }
                     socket.close();
                 } catch (IOException e) {
                     e.printStackTrace();

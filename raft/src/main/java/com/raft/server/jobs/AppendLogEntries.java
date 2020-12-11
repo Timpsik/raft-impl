@@ -15,22 +15,29 @@ import java.io.ObjectOutputStream;
 import java.net.Socket;
 import java.util.concurrent.TimeUnit;
 
-public class Heartbeat implements Runnable {
-    private static Logger logger = LogManager.getLogger(Heartbeat.class);
+public class AppendLogEntries implements Runnable {
+
+
+    private static Logger logger = LogManager.getLogger(AppendLogEntries.class);
 
     private final RaftServer raftServer;
     private final String address;
+    private LogEntry logEntry;
 
-    public Heartbeat(RaftServer raftServer, String address) {
+    public AppendLogEntries(RaftServer raftServer, String address, LogEntry logEntry) {
         this.raftServer = raftServer;
         this.address = address;
+        this.logEntry = logEntry;
     }
 
     @Override
     public void run() {
         if (raftServer.getState() == ServerState.LEADER) {
-            AppendEntriesRequest r = new AppendEntriesRequest(raftServer.getCurrentTerm().get(), raftServer.getServerId(), raftServer.getLastLogEntryTerm(), raftServer.getCommitIndex().get(), raftServer.getCommitIndex().get(), new LogEntry[0]);
-            logger.info("Sending heartbeat request to " + address);
+            LogEntry[] entries = new LogEntry[1];
+            entries[0] = logEntry;
+            AppendEntriesRequest r = new AppendEntriesRequest(raftServer.getCurrentTerm().get(), raftServer.getServerId(),
+                    raftServer.getLastLogEntryTerm(), raftServer.getCommitIndex().get(), raftServer.getCommitIndex().get(), entries);
+            logger.info("Sending log entries request to " + address);
             Socket socket = null;
             try {
                 socket = new Socket(address.split(":")[0], Integer.parseInt(address.split(":")[1]));
@@ -42,9 +49,6 @@ public class Heartbeat implements Runnable {
                     logger.info("Successful heartbeat sent to " + address);
                 } else {
                     logger.info("Heartbeat failed to " + address);
-                    if (response.getTerm() > raftServer.getCurrentTerm().get()) {
-                        raftServer.setState(ServerState.FOLLOWER);
-                    }
                 }
 
 

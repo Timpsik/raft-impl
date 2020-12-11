@@ -1,5 +1,7 @@
 package com.raft.server;
 
+import com.raft.requests.ChangeStateRequest;
+import com.raft.requests.ChangeStateResponse;
 import com.raft.server.jobs.RequestVote;
 import com.raft.server.rpc.AppendEntriesRequest;
 import com.raft.server.rpc.AppendEntriesResponse;
@@ -37,9 +39,10 @@ public class RaftConnection implements Runnable {
             if (o.getClass().equals(RequestVoteRequest.class)) {
                 logger.info("Received request vote ");
                 RequestVoteRequest request = (RequestVoteRequest) o;
-                if (request.getTerm() > server.getCurrentTerm().get() && server.getVotedFor().compareAndSet(-1, request.getCandidateId())) {
+                if (request.getTerm() > server.getCurrentTerm().get() && request.getLastLogIndex() >= server.getLastApplied().get()) {
                     logger.info("Gave vote to " + request.getCandidateId());
-                    server.setLastHeardFromLeader(System.currentTimeMillis());
+                    server.getVotedFor().set(request.getCandidateId());
+                    server.setLastHeardFromLeader(System.nanoTime());
                     server.setState(ServerState.FOLLOWER);
                     server.getCurrentTerm().set(request.getTerm());
                     RequestVoteResponse resp = new RequestVoteResponse(server.getCurrentTerm().get(), true);
@@ -48,15 +51,27 @@ public class RaftConnection implements Runnable {
                     RequestVoteResponse resp = new RequestVoteResponse(server.getCurrentTerm().get(), false);
                     out.writeObject(resp);
                 }
-            } else if (o.getClass().equals(AppendEntriesRequest.class)) {
+            } else if (AppendEntriesRequest.class.equals(o.getClass())) {
                 logger.info("Received append ");
                 AppendEntriesRequest request = (AppendEntriesRequest) o;
                 if (request.getTerm() >= server.getCurrentTerm().get()) {
                     server.getCurrentTerm().set(request.getTerm());
-                    server.setLastHeardFromLeader(System.currentTimeMillis());
+                    server.setState(ServerState.FOLLOWER);
+                    server.setLeaderId(request.getLeaderId());
+                    server.setLastHeardFromLeader(System.nanoTime());
                     out.writeObject(new AppendEntriesResponse(server.getCurrentTerm().get(),true));
                 } else {
                     out.writeObject(new AppendEntriesResponse(server.getCurrentTerm().get(),false));
+                }
+            } else if (ChangeStateRequest.class.equals(o.getClass())) {
+                if (server.getState() == ServerState.LEADER) {
+                    ChangeStateRequest r = (ChangeStateRequest) o;
+                    server.modifyLog(r.getVar(), r.getValue());
+                    ChangeStateResponse changeStateResponse = new ChangeStateResponse(server.getServerId(), true);
+                    out.writeObject(changeStateResponse);
+                } else {
+                    ChangeStateResponse changeStateResponse = new ChangeStateResponse(server.getLeaderId(), false);
+                    out.writeObject(changeStateResponse);
                 }
             } else {
                 logger.info("Received: " + o.getClass().getName());
