@@ -2,8 +2,8 @@ package com.raft.server.rpc;
 
 import java.io.Serializable;
 
-public class RequestVoteResponse implements Serializable {
-    private long term;
+public class RequestVoteResponse extends ServerResponse {
+
     private boolean voteGranted;
 
     public RequestVoteResponse(long term, boolean voteGranted) {
@@ -11,9 +11,6 @@ public class RequestVoteResponse implements Serializable {
         this.voteGranted = voteGranted;
     }
 
-    public long getTerm() {
-        return term;
-    }
 
     public boolean isVoteGranted() {
         return voteGranted;

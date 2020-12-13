@@ -1,9 +1,5 @@
 package com.raft.server;
 
-import com.raft.requests.ChangeStateRequest;
-import com.raft.requests.ChangeStateResponse;
-import com.raft.requests.ReadRequest;
-import com.raft.requests.ReadResponse;
 import com.raft.server.rpc.AppendEntriesRequest;
 import com.raft.server.rpc.AppendEntriesResponse;
 import com.raft.server.rpc.RequestVoteRequest;
@@ -16,83 +12,44 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
 
-public class RaftConnection implements Runnable {
-    private static Logger logger = LogManager.getLogger(RaftConnection.class);
+public class InputServerConnection implements Runnable {
+    private static Logger logger = LogManager.getLogger(InputServerConnection.class);
 
-    Socket connection;
-    final RaftServer server;
+    private RaftServer server;
+    private final Socket connection;
+    private final ObjectInputStream in;
+    private final ObjectOutputStream out;
 
-    public RaftConnection(Socket accept, RaftServer raftServer) {
-        connection = accept;
-        server = raftServer;
+    public InputServerConnection(RaftServer server, Socket connection, ObjectInputStream in, ObjectOutputStream out) {
+        this.server = server;
+        this.connection = connection;
+        this.in = in;
+        this.out = out;
     }
 
     @Override
     public void run() {
-        ObjectInputStream in = null;
-        ObjectOutputStream out = null;
-        try {
-            in = new ObjectInputStream(connection.getInputStream());
-            out = new ObjectOutputStream(connection.getOutputStream());
-            Object o = in.readObject();
-            if (handleServerConnection(o, out)) {
-                new Thread(new InputServerConnection(server, connection, in, out)).start();
-                return;
-            }
-            if (ChangeStateRequest.class.equals(o.getClass())) {
-                logger.info("Serving State change from client");
-                if (server.getState() == ServerState.LEADER) {
-                    logger.info("Responding to State change from client");
-                    ChangeStateRequest r = (ChangeStateRequest) o;
-                    ChangeStateResponse changeStateResponse = server.modifyLog(r);
-                    out.writeObject(changeStateResponse);
-                } else {
-                    logger.info("Not leader, send leader address to client");
-                    ChangeStateResponse changeStateResponse = new ChangeStateResponse(server.getLeaderAddress(), false);
-                    out.writeObject(changeStateResponse);
-                }
-            } else if (ReadRequest.class.equals(o.getClass())) {
-                logger.info("Serving read request from client");
-                if (server.getState() == ServerState.LEADER) {
-                    logger.info("Responding to read from client");
-                    ReadRequest r = (ReadRequest) o;
-                    ReadResponse readResponse = server.readFromState(r);
-                    out.writeObject(readResponse);
-                } else {
-                    logger.info("Not leader, send leader address to client");
-                    ReadResponse readResponse = new ReadResponse(server.getLeaderAddress(), false, -1);
-                    out.writeObject(readResponse);
-                }
-            } else {
-                logger.warn("Received: " + o.getClass().getName());
-            }
-            in.close();
-            out.close();
-            connection.close();
-        } catch (IOException | ClassNotFoundException e) {
-            logger.error("Error when executing socket: ", e);
-            e.printStackTrace();
+        while (true) {
             try {
-                if (in != null) {
-                    in.close();
+                if (!connection.isClosed()) {
+                    Object o = in.readObject();
+                    handleServerConnection(o, out);
+                } else {
+                    break;
                 }
-                if (out != null) {
-                    out.close();
-                }
-                connection.close();
-            } catch (IOException ex) {
-                logger.error("Error when closing socket: ", ex);
-                ex.printStackTrace();
+            } catch (IOException | ClassNotFoundException e) {
+                e.printStackTrace();
+                break;
             }
         }
     }
 
-    private boolean handleServerConnection(Object o, ObjectOutputStream out) throws IOException {
+    private void handleServerConnection(Object o, ObjectOutputStream out) throws IOException {
         if (o.getClass().equals(RequestVoteRequest.class)) {
             RequestVoteRequest request = (RequestVoteRequest) o;
             logger.info("Received vote request with term " + request.getTerm() + " from: " + connection.getInetAddress());
             if (request.getTerm() > server.getCurrentTerm().get() && request.getLastLogIndex() >= server.getLastApplied().get() && (server.getLogEntries().size() == 0 || request.getLastLogTerm() == server.getLogEntries().get(server.getLastApplied().get()).getTerm())) {
-                try {
+                try{
                     server.getElectionLock();
                     logger.info("Gave vote to " + request.getCandidateId() + " for term " + request.getTerm() + " to: " + connection.getPort());
                     server.getVotedFor().set(request.getCandidateId());
@@ -110,7 +67,6 @@ public class RaftConnection implements Runnable {
                 RequestVoteResponse resp = new RequestVoteResponse(server.getCurrentTerm().get(), false);
                 out.writeObject(resp);
             }
-            return true;
         } else if (AppendEntriesRequest.class.equals(o.getClass())) {
             logger.debug("Received append ");
             AppendEntriesRequest request = (AppendEntriesRequest) o;
@@ -123,7 +79,7 @@ public class RaftConnection implements Runnable {
                 if (prevLogIndex >= 0 && (prevLogIndex >= server.getLogEntries().size() || server.getLogEntries().get(prevLogIndex).getTerm() != request.getPrevLogTerm())) {
                     logger.warn("Inconsistency in log: prevLogIndex " + prevLogIndex + " request prev term: " + request.getPrevLogTerm());
                     out.writeObject(new AppendEntriesResponse(server.getCurrentTerm().get(), false));
-                    return true;
+                    return;
                 }
                 LogEntry[] newEntries = request.getEntries();
                 if (newEntries.length > 0) {
@@ -155,8 +111,6 @@ public class RaftConnection implements Runnable {
             } else {
                 out.writeObject(new AppendEntriesResponse(server.getCurrentTerm().get(), false));
             }
-            return true;
         }
-        return false;
     }
 }

@@ -4,8 +4,7 @@ import java.io.*;
 import java.net.Socket;
 import java.util.Random;
 
-import com.raft.requests.ChangeStateRequest;
-import com.raft.requests.ChangeStateResponse;
+import com.raft.requests.*;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -14,15 +13,18 @@ public class RaftClient {
     private final Logger logger = LogManager.getLogger(RaftClient.class);
 
     private String[] clusterAddresses;
-    private int leaderIndex;
+    private String leaderAddress = "";
     private Random random = new Random();
+    private final int clientId;
+    private long requestNr = 0;
 
-    public RaftClient(String clusterAddress) {
+    public RaftClient(String clusterAddress, int clientId) {
         this.clusterAddresses = clusterAddress.split(",");
+        this.clientId = clientId;
     }
 
     public static void main(String[] args) throws IOException {
-        RaftClient raftClient = new RaftClient(args[0]);
+        RaftClient raftClient = new RaftClient(args[0], Integer.parseInt(args[1]));
         raftClient.start();
     }
 
@@ -34,11 +36,12 @@ public class RaftClient {
         try {
 
             while (true) {
-                int serverToConnect = leaderIndex;
-                if (serverToConnect != -1) {
-                    serverToConnect = random.nextInt(clusterAddresses.length);
+                String serverToConnect = leaderAddress;
+                if ("".equals(serverToConnect)) {
+
+                    serverToConnect = clusterAddresses[random.nextInt(clusterAddresses.length)];
                 }
-                logger.info("Connecting to " + clusterAddresses[serverToConnect]);
+                logger.info("Connecting to " + serverToConnect);
                 //Enter data using BufferReader
                 BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
                 System.out.println("Enter variable name or empty String to exit: ");
@@ -46,14 +49,22 @@ public class RaftClient {
                 if ("".equals(var)) {
                     break;
                 }
-                System.out.println("Enter vale: ");
-                int value = Integer.parseInt(reader.readLine());
-                socket = new Socket(clusterAddresses[serverToConnect].split(":")[0], Integer.parseInt(clusterAddresses[serverToConnect].split(":")[1]));
+                RaftRequest r;
+                if ("read".equals(var)) {
+                    System.out.println("Enter variable name: ");
+                    String readVar = reader.readLine().strip();
+                    r = new ReadRequest(readVar);
+                } else {
+                    System.out.println("Enter value: ");
+                    int value = Integer.parseInt(reader.readLine());
+                    r = new ChangeStateRequest(var, value, clientId, requestNr);
+                }
+                socket = new Socket(serverToConnect.split(":")[0], Integer.parseInt(serverToConnect.split(":")[1]));
                 out = new ObjectOutputStream(socket.getOutputStream());
-                ChangeStateRequest r = new ChangeStateRequest(var, value);
+                requestNr++;
                 out.writeObject(r);
                 in = new ObjectInputStream(socket.getInputStream());
-                ChangeStateResponse response = (ChangeStateResponse) in.readObject();
+                RaftResponse response = (RaftResponse) in.readObject();
                 while(!response.isSuccess()) {
                     logger.info("Did not send the request to leader, re-send");
                     try {
@@ -64,18 +75,25 @@ public class RaftClient {
                         logger.error("Could not close old socket: ", e);
                         e.printStackTrace();
                     }
-                    leaderIndex = response.getLeaderId();
-                    socket = new Socket(clusterAddresses[leaderIndex].split(":")[0], Integer.parseInt(clusterAddresses[leaderIndex].split(":")[1]));
+                    serverToConnect = response.getLeaderAddress();
+                    socket = new Socket(serverToConnect.split(":")[0], Integer.parseInt(serverToConnect.split(":")[1]));
                     out = new ObjectOutputStream(socket.getOutputStream());
                     out.writeObject(r);
                     in = new ObjectInputStream(socket.getInputStream());
-                    response = (ChangeStateResponse) in.readObject();
+                    response = (RaftResponse) in.readObject();
+                }
+                if(response instanceof ReadResponse) {
+                    System.out.println("Value stored: "  + ((ReadResponse) response).getValue());
+
+                } else if ( response instanceof ChangeStateResponse) {
+                    System.out.println("State changed");
                 }
                 logger.info("Request was successful");
             }
 
 
         } catch (IOException | ClassNotFoundException e) {
+            System.out.println("Error: ");
             e.printStackTrace();
         } finally {
             if (socket != null) {

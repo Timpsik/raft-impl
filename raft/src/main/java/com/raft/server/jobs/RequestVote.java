@@ -7,8 +7,7 @@ import com.raft.server.rpc.RequestVoteResponse;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import java.io.*;
-import java.net.Socket;
+import java.io.IOException;
 
 public class RequestVote implements Runnable {
     private static Logger logger = LogManager.getLogger(RequestVote.class);
@@ -16,51 +15,37 @@ public class RequestVote implements Runnable {
 
     private final RaftServer raftServer;
     private final String address;
+    private final int serverId;
 
-    public RequestVote(RaftServer raftServer, String address) {
+    public RequestVote(RaftServer raftServer, String address, int serverId) {
         this.raftServer = raftServer;
         this.address = address;
+        this.serverId = serverId;
     }
 
     @Override
     public void run() {
         RequestVoteRequest r = new RequestVoteRequest(raftServer.getCurrentTerm().get(), raftServer.getServerId(), raftServer.getLastApplied().get(), raftServer.getLastLogEntryTerm());
-        logger.info("Sending vote request to " + address);
-        Socket socket = null;
-        ObjectOutputStream out = null;
-        ObjectInputStream in = null;
-        try {
-            socket = new Socket(address.split(":")[0], Integer.parseInt(address.split(":")[1]));
-            out = new ObjectOutputStream(socket.getOutputStream());
-            out.writeObject(r);
-            in = new ObjectInputStream(socket.getInputStream());
-            RequestVoteResponse response = (RequestVoteResponse) in.readObject();
+        logger.info("Sending vote request to " + address + " for term " + raftServer.getCurrentTerm().get());
+
+            RequestVoteResponse response = (RequestVoteResponse) raftServer.getServerConnection(serverId).sendRequestToServer(r);
+            if (response == null || r.getTerm() != raftServer.getCurrentTerm().get()) {
+                return;
+            }
             if (response.isVoteGranted()) {
-                logger.info("Received vote from " + address);
+                if (logger.isDebugEnabled()) {
+                    logger.debug("Received vote from " + address + " for term " + r.getTerm());
+                }
+                logger.info("Received vote from " + address + " for term " + r.getTerm());
                 raftServer.addVoteAndCheckWin();
             } else {
-                logger.info("Did not get vote from " + address);
+                if (logger.isDebugEnabled()) {
+                    logger.debug("Did not get vote from " + address);
+                }
+                logger.info("Did not get vote from " + address + " for term " + r.getTerm());
                 if (response.getTerm() > raftServer.getCurrentTerm().get()) {
                     raftServer.setState(ServerState.FOLLOWER);
                 }
             }
-
-        } catch (IOException | ClassNotFoundException e) {
-            logger.error("Error when sending vote request to " + address + ": ", e);
-        } finally {
-            if (socket != null) {
-                try {
-                    if (out != null) {
-                        out.close();
-                    }
-                    if (in != null) {
-                        in.close();
-                    }
-                    socket.close();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
-        }
     }
 }

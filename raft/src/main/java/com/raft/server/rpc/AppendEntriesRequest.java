@@ -4,15 +4,15 @@ import com.raft.server.LogEntry;
 
 import java.io.Serializable;
 
-public final class AppendEntriesRequest implements Serializable {
-    long term;
+public final class AppendEntriesRequest extends ServerRequest {
+
     int leaderId;
     long prevLogTerm;
-    long prevLogIndex;
-    long leaderCommit;
+    int prevLogIndex;
+    int leaderCommit;
     LogEntry[] entries;
 
-    public AppendEntriesRequest(long term, int leaderId, long prevLogTerm, long prevLogIndex, long leaderCommit, LogEntry[] entries) {
+    public AppendEntriesRequest(long term, int leaderId, long prevLogTerm, int prevLogIndex, int leaderCommit, LogEntry[] entries) {
         this.term = term;
         this.leaderId = leaderId;
         this.prevLogTerm = prevLogTerm;
@@ -21,9 +21,7 @@ public final class AppendEntriesRequest implements Serializable {
         this.entries = entries;
     }
 
-    public long getTerm() {
-        return term;
-    }
+
 
     public int getLeaderId() {
         return leaderId;
@@ -33,11 +31,11 @@ public final class AppendEntriesRequest implements Serializable {
         return prevLogTerm;
     }
 
-    public long getPrevLogIndex() {
+    public int getPrevLogIndex() {
         return prevLogIndex;
     }
 
-    public long getLeaderCommit() {
+    public int getLeaderCommit() {
         return leaderCommit;
     }
 

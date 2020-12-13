@@ -2,18 +2,18 @@ package com.raft.server;
 
 import java.io.IOException;
 import java.net.ServerSocket;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Random;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
+import com.raft.requests.ChangeStateRequest;
+import com.raft.requests.ChangeStateResponse;
+import com.raft.requests.ReadRequest;
+import com.raft.requests.ReadResponse;
+import com.raft.server.jobs.AppendLogEntries;
 import com.raft.server.jobs.ElectionTimeoutChecker;
 import com.raft.server.jobs.Heartbeat;
 import com.raft.server.jobs.RequestVote;
@@ -37,17 +37,25 @@ public class RaftServer {
 
     private AtomicLong currentTerm = new AtomicLong(-1);
     private AtomicLong votedFor = new AtomicLong(-1);
-    private AtomicInteger votes = new AtomicInteger(0);
+    private AtomicInteger votes = new AtomicInteger(1);
     private int electionTimeout = 150;
     private AtomicLong lastHeardFromLeader = new AtomicLong();
+    private Lock electionLock = new ReentrantLock();
 
     private int leaderId;
 
-    private AtomicLong commitIndex = new AtomicLong(0);
-    private AtomicLong lastApplied = new AtomicLong(0);
+    private AtomicInteger commitIndex = new AtomicInteger(0);
+    private AtomicInteger lastApplied = new AtomicInteger(0);
     private ConcurrentMap<String, Integer> dataMap = new ConcurrentHashMap<>();
     private List<LogEntry> logEntries = new ArrayList<>();
-    private LogEntry lastLogEntry = new LogEntry(-1, null);
+
+    private ConcurrentMap<Integer, Integer> nextIndices = new ConcurrentHashMap<>();
+    private ConcurrentMap<Integer, Integer> matchIndices = new ConcurrentHashMap<>();
+
+    private ConcurrentMap<Integer, Set<Long>> clientServerMap = new ConcurrentHashMap<>();
+
+    private Map<Integer, RaftServerConnection> connections = new HashMap<>();
+
 
     public RaftServer(String[] args) {
         String[] serverStrings = args[0].strip().split(",");
@@ -60,8 +68,9 @@ public class RaftServer {
             if (i != serverId) {
                 if (logger.isDebugEnabled()) {
                     logger.debug("Server ID: " + i + " is at address " + serverStrings[i]);
-                    servers.put(i, serverStrings[i]);
                 }
+                servers.put(i, serverStrings[i]);
+                connections.put(i, new RaftServerConnection(i, serverStrings[i]));
             }
         }
         lastHeardFromLeader.set(System.nanoTime());
@@ -79,7 +88,6 @@ public class RaftServer {
             ServerSocket socket = new ServerSocket(port);
             while (true) {
                 RaftConnection raftConnection = new RaftConnection(socket.accept(), this);
-
                 Thread thread = new Thread(raftConnection);
                 thread.start();
             }
@@ -101,8 +109,9 @@ public class RaftServer {
     public void convertToCandidate() {
         if (votedFor.compareAndSet(-1, serverId)) {
             currentTerm.incrementAndGet();
-            votes.incrementAndGet();
             state = ServerState.CANDIDATE;
+            logger.info("Starting election for term " + currentTerm.get() + ", currentTime : " + System.nanoTime() + " Last heard time: " + (getLastHeardFromLeader() + getElectionTimeout() * 1000 * 1000));
+            lastHeardFromLeader.set(System.nanoTime());
         }
 
     }
@@ -110,7 +119,7 @@ public class RaftServer {
     public void sendVoteRequests() {
         for (int key : servers.keySet()) {
             if (key != serverId) {
-                RequestVote requestVote = new RequestVote(this, servers.get(key));
+                RequestVote requestVote = new RequestVote(this, servers.get(key), key);
                 Thread thread = new Thread(requestVote);
                 thread.start();
             }
@@ -120,16 +129,19 @@ public class RaftServer {
     public void addVoteAndCheckWin() {
         votes.incrementAndGet();
         if (state == ServerState.CANDIDATE && votes.get() > servers.keySet().size() / 2) {
-            logger.info("Elected as leader");
+            logger.info("Elected as leader for term " + currentTerm.get());
             state = ServerState.LEADER;
-            startHeartbeats();
+            startHeartbeatsAndInitializeFollowerInfo();
         }
     }
 
-    private void startHeartbeats() {
+    private void startHeartbeatsAndInitializeFollowerInfo() {
+        logger.info("Starting heartbeats");
         for (int key : servers.keySet()) {
+            nextIndices.put(key, logEntries.size());
+            matchIndices.put(key, 0);
             if (key != serverId) {
-                new Thread(new Heartbeat(this, servers.get(key))).start();
+                new Thread(new Heartbeat(this, servers.get(key), key)).start();
             }
         }
     }
@@ -138,17 +150,43 @@ public class RaftServer {
         votedFor.set(-1);
     }
 
-    public void modifyLog(String var, int value) {
-        sendLogUpdate(new LogEntry(currentTerm.get(), new StateChange(var, Integer.toString(value))));
-        dataMap.put(var, value);
+    public ChangeStateResponse modifyLog(ChangeStateRequest r) {
+        Set<Long> servedRequests = clientServerMap.getOrDefault(r.getClientId(), new HashSet<>());
+        if (servedRequests.contains(r.getRequestNr()) ) {
+            return new ChangeStateResponse(getLeaderAddress(), true);
+        }
+        LogEntry newEntry = new LogEntry(currentTerm.get(), new StateChange(r.getVar(), Integer.toString(r.getValue())), r.getClientId(), r.getRequestNr());
+        logEntries.add(newEntry);
+        servedRequests.add(r.getRequestNr());
+        clientServerMap.put(r.getClientId(), servedRequests);
+        return sendLogUpdateAndApplyToState(newEntry);
     }
 
-    private void sendLogUpdate(LogEntry logEntry) {
-
+    private ChangeStateResponse sendLogUpdateAndApplyToState(LogEntry logEntry) {
+        CountDownLatch countDownLatch = new CountDownLatch(servers.keySet().size() / 2);
+        AtomicInteger successCounter = new AtomicInteger(1);
+        for (int key : servers.keySet()) {
+            if (key != serverId) {
+                new Thread(new AppendLogEntries(this, servers.get(key), key, countDownLatch, successCounter)).start();
+            }
+        }
+        try {
+            countDownLatch.await();
+            if (successCounter.get() > servers.keySet().size() / 2 ) {
+                dataMap.put(logEntry.getChange().key, Integer.valueOf(logEntry.getChange().value));
+                lastApplied.incrementAndGet();
+                commitIndex.incrementAndGet();
+                return new ChangeStateResponse(getLeaderAddress(), true);
+            }
+        } catch (InterruptedException e) {
+            logger.error("sendLogUpdateAndApplyToState() - CountDownLatch: ", e);
+            e.printStackTrace();
+        }
+        return new ChangeStateResponse(getLeaderAddress(), false);
     }
 
     public void resetVotes() {
-        votes.set(0);
+        votes.set(1);
     }
 
     public AtomicLong getCurrentTerm() {
@@ -163,16 +201,20 @@ public class RaftServer {
         return serverId;
     }
 
-    public AtomicLong getCommitIndex() {
+    public AtomicInteger getCommitIndex() {
         return commitIndex;
     }
 
-    public AtomicLong getLastApplied() {
+    public AtomicInteger getLastApplied() {
         return lastApplied;
     }
 
     public long getLastLogEntryTerm() {
-        return lastLogEntry.getTerm();
+        if (logEntries.size() != 0) {
+            return logEntries.get(logEntries.size() - 1).getTerm();
+        }
+        return 0;
+
     }
 
     public void setState(ServerState state) {
@@ -209,5 +251,73 @@ public class RaftServer {
 
     public void setLeaderId(int leaderId) {
         this.leaderId = leaderId;
+    }
+
+    public String getLeaderAddress() {
+        return servers.get(leaderId);
+    }
+
+    public List<LogEntry> getLogEntries() {
+        return logEntries;
+    }
+
+    public int getNextIndex(int serverId) {
+        return nextIndices.get(serverId);
+    }
+
+    public LogEntry[] getLogEntriesSince(int startIndex) {
+        if (startIndex>= logEntries.size()) {
+            List<LogEntry> logEntriesSince = this.logEntries.subList(startIndex, logEntries.size());
+            LogEntry[] newEntries = new LogEntry[logEntriesSince.size()];
+            logEntriesSince.toArray(newEntries);
+            return newEntries;
+        }
+        return new LogEntry[0];
+    }
+
+    public int reduceAndGetNextIndex(int serverId) {
+        int nextIndex = nextIndices.get(serverId);
+        nextIndex--;
+        nextIndices.put(serverId, nextIndex);
+        return nextIndex;
+    }
+
+    public long getLogEntryTerm(int logEntryIndex) {
+        if (logEntryIndex < 0) {
+            return -1;
+        }
+        return logEntries.get(logEntryIndex).getTerm();
+    }
+
+    public void setNextIndex(int serverId, int newNextIndex) {
+        nextIndices.put(serverId, newNextIndex);
+    }
+
+    public void setMatchIndex(int serverId, int newNextIndex) {
+        matchIndices.put(serverId, newNextIndex);
+    }
+
+    public void applyStateChange(StateChange change) {
+        dataMap.put(change.key, Integer.valueOf(change.value));
+    }
+
+    public ReadResponse readFromState(ReadRequest r) {
+        int integer = dataMap.get(r.getVar());
+        return new ReadResponse(getLeaderAddress(), true, integer);
+
+    }
+
+    public RaftServerConnection getServerConnection(int serverId) {
+        return connections.get(serverId);
+    }
+
+    public void getElectionLock() {
+        logger.info("Locking elections");
+        electionLock.lock();
+    }
+
+    public void releaseElectionLock() {
+        logger.info("Unlocking elections");
+        electionLock.unlock();
     }
 }

@@ -1,6 +1,5 @@
 package com.raft.server.jobs;
 
-import com.raft.server.Configuration;
 import com.raft.server.LogEntry;
 import com.raft.server.RaftServer;
 import com.raft.server.ServerState;
@@ -13,7 +12,8 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class AppendLogEntries implements Runnable {
 
@@ -22,48 +22,74 @@ public class AppendLogEntries implements Runnable {
 
     private final RaftServer raftServer;
     private final String address;
-    private LogEntry logEntry;
+    private final int serverId;
+    private CountDownLatch countDownLatch;
+    private AtomicInteger successCounter;
 
-    public AppendLogEntries(RaftServer raftServer, String address, LogEntry logEntry) {
+    public AppendLogEntries(RaftServer raftServer, String address, int serverId, CountDownLatch countDownLatch, AtomicInteger successCounter) {
         this.raftServer = raftServer;
         this.address = address;
-        this.logEntry = logEntry;
+        this.serverId = serverId;
+        this.countDownLatch = countDownLatch;
+        this.successCounter = successCounter;
     }
 
     @Override
     public void run() {
         if (raftServer.getState() == ServerState.LEADER) {
-            LogEntry[] entries = new LogEntry[1];
-            entries[0] = logEntry;
+            int nextIndex = raftServer.getNextIndex(serverId);
+            LogEntry[] entries = raftServer.getLogEntriesSince(nextIndex);
             AppendEntriesRequest r = new AppendEntriesRequest(raftServer.getCurrentTerm().get(), raftServer.getServerId(),
-                    raftServer.getLastLogEntryTerm(), raftServer.getCommitIndex().get(), raftServer.getCommitIndex().get(), entries);
+                    raftServer.getLogEntryTerm(nextIndex - 1), nextIndex - 1, raftServer.getCommitIndex().get(), entries);
             logger.info("Sending log entries request to " + address);
-            Socket socket = null;
-            try {
-                socket = new Socket(address.split(":")[0], Integer.parseInt(address.split(":")[1]));
-                ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
-                out.writeObject(r);
-                ObjectInputStream in = new ObjectInputStream(socket.getInputStream());
-                AppendEntriesResponse response = (AppendEntriesResponse) in.readObject();
-                if (response.isSuccess()) {
-                    logger.info("Successful heartbeat sent to " + address);
-                } else {
-                    logger.info("Heartbeat failed to " + address);
-                }
-
-
-            } catch (IOException | ClassNotFoundException e) {
-                logger.error("Error when sending heartbeat to " + address + ": ", e);
-            } finally {
-                if (socket != null) {
-                    try {
-                        socket.close();
-                    } catch (IOException e) {
-                        e.printStackTrace();
+            AppendEntriesResponse response = (AppendEntriesResponse) raftServer.getServerConnection(serverId).sendRequestToServer(r);
+            if (response == null) {
+                logger.warn("Error when sending append logs to " + address);
+                new Thread(new AppendLogEntries(raftServer, address, serverId, countDownLatch, successCounter)).start();
+                countDownLatch.countDown();
+                return;
+            }
+            if (response.getTerm() != raftServer.getCurrentTerm().get()) {
+                countDownLatch.countDown();
+                return;
+            }
+            if (response.isSuccess()) {
+                logger.info("Successful log append sent to " + address);
+                raftServer.setNextIndex(serverId, nextIndex + entries.length - 1);
+                raftServer.setMatchIndex(serverId, nextIndex + entries.length - 1);
+                successCounter.incrementAndGet();
+            } else {
+                if (response.getTerm() <= raftServer.getCurrentTerm().get()) {
+                    logger.info("log append failed to " + address);
+                    while (!response.isSuccess()) {
+                        if (raftServer.getState() == ServerState.LEADER) {
+                            nextIndex = raftServer.reduceAndGetNextIndex(serverId);
+                            entries = raftServer.getLogEntriesSince(nextIndex);
+                            r = new AppendEntriesRequest(raftServer.getCurrentTerm().get(), raftServer.getServerId(),
+                                    raftServer.getLogEntryTerm(nextIndex - 1), nextIndex - 1, raftServer.getCommitIndex().get(), entries);
+                            response = (AppendEntriesResponse) raftServer.getServerConnection(serverId).sendRequestToServer(r);
+                            if (response.getTerm() != raftServer.getCurrentTerm().get()) {
+                                countDownLatch.countDown();
+                                return;
+                            }
+                            if (response.getTerm() > raftServer.getCurrentTerm().get()) {
+                                logger.warn("Log append failed to " + address + ", not leader anymore");
+                                raftServer.setState(ServerState.FOLLOWER);
+                                break;
+                            }
+                        }
                     }
+                    if (response.isSuccess()) {
+                        raftServer.setNextIndex(serverId, nextIndex + entries.length - 1);
+                        raftServer.setMatchIndex(serverId, nextIndex + entries.length - 1);
+                        successCounter.incrementAndGet();
+                    }
+                } else {
+                    logger.info("Not leader anymore");
+                    raftServer.setState(ServerState.FOLLOWER);
                 }
             }
-            raftServer.getScheduler().schedule(new Heartbeat(raftServer, address), Configuration.minElectionTimeout / 2, TimeUnit.MILLISECONDS);
+            countDownLatch.countDown();
         }
     }
 }

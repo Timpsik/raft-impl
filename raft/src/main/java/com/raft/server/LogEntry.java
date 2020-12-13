@@ -1,12 +1,16 @@
 package com.raft.server;
 
-final public class LogEntry {
+ public final class LogEntry {
     private final long term;
     private final StateChange change;
+    private final int clientId;
+    private final long requestNr;
 
-    public LogEntry(long term, StateChange change) {
+    public LogEntry(long term, StateChange change, int clientId, long requestNr) {
         this.term = term;
         this.change = change;
+        this.clientId = clientId;
+        this.requestNr = requestNr;
     }
 
     public long getTerm() {
@@ -16,4 +20,12 @@ final public class LogEntry {
     public StateChange getChange() {
         return change;
     }
-}
+
+     public int getClientId() {
+         return clientId;
+     }
+
+     public long getRequestNr() {
+         return requestNr;
+     }
+ }

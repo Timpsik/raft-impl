@@ -2,13 +2,17 @@ package com.raft.requests;
 
 import java.io.Serializable;
 
-public class ChangeStateResponse implements Serializable, RaftResponse {
+public class ReadResponse implements Serializable, RaftResponse {
+
     private String leaderAddress;
     private boolean success;
+    private int value;
 
-    public ChangeStateResponse(String leaderAddress, boolean success) {
+
+    public ReadResponse(String leaderAddress, boolean success, int value) {
         this.leaderAddress = leaderAddress;
         this.success = success;
+        this.value = value;
     }
 
     @Override
@@ -19,5 +23,9 @@ public class ChangeStateResponse implements Serializable, RaftResponse {
     @Override
     public String getLeaderAddress() {
         return leaderAddress;
+    }
+
+    public int getValue() {
+        return value;
     }
 }
