@@ -2,8 +2,18 @@ package com.raft.server;
 
 import java.io.IOException;
 import java.net.ServerSocket;
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
@@ -16,6 +26,7 @@ import com.raft.requests.ReadResponse;
 import com.raft.server.jobs.AppendLogEntries;
 import com.raft.server.jobs.ElectionTimeoutChecker;
 import com.raft.server.jobs.Heartbeat;
+import com.raft.server.jobs.ReadHeartbeat;
 import com.raft.server.jobs.RequestVote;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -41,11 +52,12 @@ public class RaftServer {
     private int electionTimeout = 150;
     private AtomicLong lastHeardFromLeader = new AtomicLong();
     private Lock electionLock = new ReentrantLock();
+    private Lock appendLock = new ReentrantLock();
 
     private int leaderId;
 
-    private AtomicInteger commitIndex = new AtomicInteger(0);
-    private AtomicInteger lastApplied = new AtomicInteger(0);
+    private AtomicInteger commitIndex = new AtomicInteger(-1);
+    private AtomicInteger lastApplied = new AtomicInteger(-1);
     private ConcurrentMap<String, Integer> dataMap = new ConcurrentHashMap<>();
     private List<LogEntry> logEntries = new ArrayList<>();
 
@@ -108,8 +120,13 @@ public class RaftServer {
 
     public void convertToCandidate() {
         if (votedFor.compareAndSet(-1, serverId)) {
-            currentTerm.incrementAndGet();
-            state = ServerState.CANDIDATE;
+            try {
+                electionLock.lock();
+                currentTerm.incrementAndGet();
+                state = ServerState.CANDIDATE;
+            } finally {
+                electionLock.unlock();
+            }
             logger.info("Starting election for term " + currentTerm.get() + ", currentTime : " + System.nanoTime() + " Last heard time: " + (getLastHeardFromLeader() + getElectionTimeout() * 1000 * 1000));
             lastHeardFromLeader.set(System.nanoTime());
         }
@@ -266,7 +283,7 @@ public class RaftServer {
     }
 
     public LogEntry[] getLogEntriesSince(int startIndex) {
-        if (startIndex>= logEntries.size()) {
+        if (startIndex < logEntries.size()) {
             List<LogEntry> logEntriesSince = this.logEntries.subList(startIndex, logEntries.size());
             LogEntry[] newEntries = new LogEntry[logEntriesSince.size()];
             logEntriesSince.toArray(newEntries);
@@ -302,8 +319,25 @@ public class RaftServer {
     }
 
     public ReadResponse readFromState(ReadRequest r) {
-        int integer = dataMap.get(r.getVar());
-        return new ReadResponse(getLeaderAddress(), true, integer);
+        CountDownLatch countDownLatch = new CountDownLatch(servers.keySet().size() / 2);
+        AtomicInteger successCounter = new AtomicInteger(1);
+        for (int key : servers.keySet()) {
+            if (key != serverId) {
+                new Thread(new ReadHeartbeat(this, servers.get(key), key, countDownLatch, successCounter)).start();
+            }
+        }
+        try {
+            countDownLatch.await();
+            if (successCounter.get() > servers.keySet().size() / 2 ) {
+                Integer value = dataMap.getOrDefault(r.getVar(), null);
+                return new ReadResponse(getLeaderAddress(), true, value);
+            }
+        } catch (InterruptedException e) {
+            logger.error("sendLogUpdateAndApplyToState() - CountDownLatch: ", e);
+            e.printStackTrace();
+        }
+        return new ReadResponse(getLeaderAddress(), false, -1);
+
 
     }
 
@@ -319,5 +353,15 @@ public class RaftServer {
     public void releaseElectionLock() {
         logger.info("Unlocking elections");
         electionLock.unlock();
+    }
+
+    public void getAppendLock() {
+        logger.debug("Locking append");
+        appendLock.lock();
+    }
+
+    public void releaseAppendLock() {
+        logger.debug("Unlocking append");
+        appendLock.unlock();
     }
 }

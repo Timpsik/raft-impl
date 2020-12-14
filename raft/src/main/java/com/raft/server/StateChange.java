@@ -1,6 +1,8 @@
 package com.raft.server;
 
-final public class StateChange {
+import java.io.Serializable;
+
+final public class StateChange implements Serializable {
     String key;
     String value;
 

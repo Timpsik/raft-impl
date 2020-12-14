@@ -25,13 +25,20 @@ public class RequestVote implements Runnable {
 
     @Override
     public void run() {
-        RequestVoteRequest r = new RequestVoteRequest(raftServer.getCurrentTerm().get(), raftServer.getServerId(), raftServer.getLastApplied().get(), raftServer.getLastLogEntryTerm());
+        RequestVoteRequest r = new
+                RequestVoteRequest(raftServer.getCurrentTerm().get(), raftServer.getServerId(), raftServer.getLastApplied().get(), raftServer.getLastLogEntryTerm());
         logger.info("Sending vote request to " + address + " for term " + raftServer.getCurrentTerm().get());
 
             RequestVoteResponse response = (RequestVoteResponse) raftServer.getServerConnection(serverId).sendRequestToServer(r);
-            if (response == null || r.getTerm() != raftServer.getCurrentTerm().get()) {
-                return;
+            try {
+                raftServer.getElectionLock();
+                if (response == null || r.getTerm() != raftServer.getCurrentTerm().get()) {
+                    return;
+                }
+            } finally {
+                raftServer.releaseElectionLock();
             }
+
             if (response.isVoteGranted()) {
                 if (logger.isDebugEnabled()) {
                     logger.debug("Received vote from " + address + " for term " + r.getTerm());

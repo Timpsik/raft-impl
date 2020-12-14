@@ -8,10 +8,6 @@ import com.raft.server.rpc.AppendEntriesResponse;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.net.Socket;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -55,7 +51,7 @@ public class AppendLogEntries implements Runnable {
             }
             if (response.isSuccess()) {
                 logger.info("Successful log append sent to " + address);
-                raftServer.setNextIndex(serverId, nextIndex + entries.length - 1);
+                raftServer.setNextIndex(serverId, nextIndex + entries.length);
                 raftServer.setMatchIndex(serverId, nextIndex + entries.length - 1);
                 successCounter.incrementAndGet();
             } else {
@@ -80,7 +76,7 @@ public class AppendLogEntries implements Runnable {
                         }
                     }
                     if (response.isSuccess()) {
-                        raftServer.setNextIndex(serverId, nextIndex + entries.length - 1);
+                        raftServer.setNextIndex(serverId, nextIndex + entries.length);
                         raftServer.setMatchIndex(serverId, nextIndex + entries.length - 1);
                         successCounter.incrementAndGet();
                     }

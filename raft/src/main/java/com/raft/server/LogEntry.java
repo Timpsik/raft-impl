@@ -1,6 +1,8 @@
 package com.raft.server;
 
- public final class LogEntry {
+import java.io.Serializable;
+
+public final class LogEntry implements Serializable {
     private final long term;
     private final StateChange change;
     private final int clientId;

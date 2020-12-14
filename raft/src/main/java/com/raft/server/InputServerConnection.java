@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
+import java.util.Arrays;
 
 public class InputServerConnection implements Runnable {
     private static Logger logger = LogManager.getLogger(InputServerConnection.class);
@@ -48,9 +49,9 @@ public class InputServerConnection implements Runnable {
         if (o.getClass().equals(RequestVoteRequest.class)) {
             RequestVoteRequest request = (RequestVoteRequest) o;
             logger.info("Received vote request with term " + request.getTerm() + " from: " + connection.getInetAddress());
-            if (request.getTerm() > server.getCurrentTerm().get() && request.getLastLogIndex() >= server.getLastApplied().get() && (server.getLogEntries().size() == 0 || request.getLastLogTerm() == server.getLogEntries().get(server.getLastApplied().get()).getTerm())) {
-                try{
-                    server.getElectionLock();
+            try {
+                server.getElectionLock();
+                if (request.getTerm() > server.getCurrentTerm().get() && request.getLastLogIndex() >= server.getLastApplied().get() && (server.getLogEntries().size() == 0 || request.getLastLogTerm() == server.getLogEntries().get(server.getLastApplied().get()).getTerm())) {
                     logger.info("Gave vote to " + request.getCandidateId() + " for term " + request.getTerm() + " to: " + connection.getPort());
                     server.getVotedFor().set(request.getCandidateId());
                     server.setLastHeardFromLeader(System.nanoTime());
@@ -59,57 +60,64 @@ public class InputServerConnection implements Runnable {
                     logger.info("Sending vote request response to " + connection.getInetAddress());
                     RequestVoteResponse resp = new RequestVoteResponse(server.getCurrentTerm().get(), true);
                     out.writeObject(resp);
-                } finally {
-                    server.releaseElectionLock();
+                } else {
+                    logger.info("Sending vote request response to " + connection.getInetAddress());
+                    RequestVoteResponse resp = new RequestVoteResponse(server.getCurrentTerm().get(), false);
+                    out.writeObject(resp);
                 }
-            } else {
-                logger.info("Sending vote request response to " + connection.getInetAddress());
-                RequestVoteResponse resp = new RequestVoteResponse(server.getCurrentTerm().get(), false);
-                out.writeObject(resp);
+            } finally {
+                server.releaseElectionLock();
             }
         } else if (AppendEntriesRequest.class.equals(o.getClass())) {
             logger.debug("Received append ");
             AppendEntriesRequest request = (AppendEntriesRequest) o;
-            if (request.getTerm() >= server.getCurrentTerm().get()) {
-                server.getCurrentTerm().set(request.getTerm());
-                server.setState(ServerState.FOLLOWER);
-                server.setLeaderId(request.getLeaderId());
-                int prevLogIndex = request.getPrevLogIndex();
-                server.setLastHeardFromLeader(System.nanoTime());
-                if (prevLogIndex >= 0 && (prevLogIndex >= server.getLogEntries().size() || server.getLogEntries().get(prevLogIndex).getTerm() != request.getPrevLogTerm())) {
-                    logger.warn("Inconsistency in log: prevLogIndex " + prevLogIndex + " request prev term: " + request.getPrevLogTerm());
-                    out.writeObject(new AppendEntriesResponse(server.getCurrentTerm().get(), false));
-                    return;
-                }
-                LogEntry[] newEntries = request.getEntries();
-                if (newEntries.length > 0) {
-                    logger.info("Adding new indices");
-                    int workedLogEntryIndex = request.getPrevLogIndex() + 1;
-                    for (LogEntry entry : newEntries) {
-                        if (server.getLogEntries().size() > workedLogEntryIndex) {
-                            LogEntry existingEntry = server.getLogEntries().get(workedLogEntryIndex);
-                            if (existingEntry.getTerm() != entry.getTerm()) {
-                                server.getLogEntries().set(workedLogEntryIndex, entry);
+            try {
+                server.getAppendLock();
+                if (request.getTerm() >= server.getCurrentTerm().get()) {
+                    server.getCurrentTerm().set(request.getTerm());
+                    server.setState(ServerState.FOLLOWER);
+                    server.setLeaderId(request.getLeaderId());
+                    int prevLogIndex = request.getPrevLogIndex();
+                    server.setLastHeardFromLeader(System.nanoTime());
+                    if (prevLogIndex >= 0 && (prevLogIndex >= server.getLogEntries().size() || server.getLogEntries().get(prevLogIndex).getTerm() != request.getPrevLogTerm())) {
+                        logger.warn("Inconsistency in log: prevLogIndex " + prevLogIndex + " request prev term: " + request.getPrevLogTerm() + ", entry size: " + request.getEntries().length);
+                        out.writeObject(new AppendEntriesResponse(server.getCurrentTerm().get(), false));
+                        return;
+                    }
+                    LogEntry[] newEntries = request.getEntries();
+                    if (newEntries.length > 0) {
+                        logger.info("Adding new indices");
+                        int workedLogEntryIndex = request.getPrevLogIndex() + 1;
+                        for (LogEntry entry : newEntries) {
+                            if (server.getLogEntries().size() > workedLogEntryIndex) {
+                                LogEntry existingEntry = server.getLogEntries().get(workedLogEntryIndex);
+                                if (existingEntry.getTerm() != entry.getTerm()) {
+                                    server.getLogEntries().set(workedLogEntryIndex, entry);
+                                }
+                            } else {
+                                server.getLogEntries().add(entry);
+                                workedLogEntryIndex++;
                             }
-                        } else {
-                            server.getLogEntries().add(entry);
                         }
                     }
-                }
 
-                if (request.getLeaderCommit() > server.getCommitIndex().get()) {
-                    for (int commitInx = server.getCommitIndex().get(); commitInx < request.getLeaderCommit() && commitInx < server.getLogEntries().size(); commitInx++) {
-                        logger.info("Commiting inx: " + commitInx);
-                        LogEntry entry = server.getLogEntries().get(commitInx);
-                        server.applyStateChange(entry.getChange());
-                        server.getCommitIndex().set(commitInx);
-                        server.getLastApplied().set(commitInx);
+                    if (request.getLeaderCommit() > server.getCommitIndex().get()) {
+                        logger.info("Leader commit inx: " + request.getLeaderCommit() + ", server commit:" + server.getCommitIndex().get());
+                        for (int commitInx = server.getCommitIndex().get() + 1; commitInx <= request.getLeaderCommit() && commitInx < server.getLogEntries().size(); commitInx++) {
+                            logger.info("Commiting inx: " + commitInx);
+                            LogEntry entry = server.getLogEntries().get(commitInx);
+                            server.applyStateChange(entry.getChange());
+                            server.getCommitIndex().set(commitInx);
+                            server.getLastApplied().set(commitInx);
+                        }
                     }
-                }
 
-                out.writeObject(new AppendEntriesResponse(server.getCurrentTerm().get(), true));
-            } else {
-                out.writeObject(new AppendEntriesResponse(server.getCurrentTerm().get(), false));
+                    out.writeObject(new AppendEntriesResponse(server.getCurrentTerm().get(), true));
+                } else {
+                    out.writeObject(new AppendEntriesResponse(server.getCurrentTerm().get(), false));
+                }
+            } finally {
+                server.releaseAppendLock();
             }
         }
     }
