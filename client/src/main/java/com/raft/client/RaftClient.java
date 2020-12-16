@@ -54,6 +54,16 @@ public class RaftClient {
                     System.out.println("Enter variable name: ");
                     String readVar = reader.readLine().strip();
                     r = new ReadRequest(readVar);
+                } else if("add".equals(var)) {
+                    System.out.println("Enter new Server id ");
+                    int value = Integer.parseInt(reader.readLine());
+                    System.out.println("Enter server address");
+                    String  address = reader.readLine();
+                    r = new AddServerRequest(address, value, clientId, requestNr);
+                } else if("remove".equals(var)) {
+                    System.out.println("Enter removed Server id ");
+                    int value = Integer.parseInt(reader.readLine());
+                    r = new RemoveServerRequest(value, clientId, requestNr);
                 } else {
                     System.out.println("Enter value: ");
                     int value = Integer.parseInt(reader.readLine());
@@ -73,9 +83,9 @@ public class RaftClient {
                         socket.close();
                     } catch (IOException e) {
                         logger.error("Could not close old socket: ", e);
-                        e.printStackTrace();
                     }
                     serverToConnect = response.getLeaderAddress();
+                    leaderAddress = serverToConnect;
                     socket = new Socket(serverToConnect.split(":")[0], Integer.parseInt(serverToConnect.split(":")[1]));
                     out = new ObjectOutputStream(socket.getOutputStream());
                     out.writeObject(r);
@@ -87,6 +97,10 @@ public class RaftClient {
 
                 } else if ( response instanceof ChangeStateResponse) {
                     System.out.println("State changed");
+                } else if ( response instanceof AddServerResponse) {
+                    System.out.println("Server added");
+                } else if ( response instanceof RemoveServerResponse) {
+                    System.out.println("Server removed");
                 }
                 logger.info("Request was successful");
             }

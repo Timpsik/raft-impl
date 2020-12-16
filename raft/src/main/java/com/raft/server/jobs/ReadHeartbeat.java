@@ -35,7 +35,7 @@ public class ReadHeartbeat implements Runnable {
     public void run() {
         if (raftServer.getState() == ServerState.LEADER) {
             AppendEntriesRequest r = new AppendEntriesRequest(raftServer.getCurrentTerm().get(), raftServer.getServerId(),
-                    raftServer.getLastLogEntryTerm(), raftServer.getLogEntries().size() - 1, raftServer.getCommitIndex().get(), new LogEntry[0]);
+                    raftServer.getLastLogEntryTerm(), raftServer.getNextIndex() - 1, raftServer.getCommitIndex().get(), new LogEntry[0]);
             logger.info("Sending log entries request to " + address);
             AppendEntriesResponse response = (AppendEntriesResponse) raftServer.getServerConnection(serverId).sendRequestToServer(r);
             if (response == null) {

@@ -1,6 +1,8 @@
 package com.raft.requests;
 
-public interface RaftResponse  {
+import java.io.Serializable;
+
+public interface RaftResponse extends Serializable {
 
     boolean isSuccess();
 

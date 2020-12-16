@@ -1,9 +1,6 @@
 package com.raft.server;
 
-import com.raft.server.rpc.AppendEntriesRequest;
-import com.raft.server.rpc.AppendEntriesResponse;
-import com.raft.server.rpc.RequestVoteRequest;
-import com.raft.server.rpc.RequestVoteResponse;
+import com.raft.server.rpc.*;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -51,7 +48,7 @@ public class InputServerConnection implements Runnable {
             logger.info("Received vote request with term " + request.getTerm() + " from: " + connection.getInetAddress());
             try {
                 server.getElectionLock();
-                if (request.getTerm() > server.getCurrentTerm().get() && request.getLastLogIndex() >= server.getLastApplied().get() && (server.getLogEntries().size() == 0 || request.getLastLogTerm() == server.getLogEntries().get(server.getLastApplied().get()).getTerm())) {
+                if (request.getTerm() > server.getCurrentTerm().get() && request.getLastLogIndex() >= server.getLastApplied().get() && request.getLastLogTerm() >= server.getLastAppliedTerm()) {
                     logger.info("Gave vote to " + request.getCandidateId() + " for term " + request.getTerm() + " to: " + connection.getPort());
                     server.getVotedFor().set(request.getCandidateId());
                     server.setLastHeardFromLeader(System.nanoTime());
@@ -79,7 +76,7 @@ public class InputServerConnection implements Runnable {
                     server.setLeaderId(request.getLeaderId());
                     int prevLogIndex = request.getPrevLogIndex();
                     server.setLastHeardFromLeader(System.nanoTime());
-                    if (prevLogIndex >= 0 && (prevLogIndex >= server.getLogEntries().size() || server.getLogEntries().get(prevLogIndex).getTerm() != request.getPrevLogTerm())) {
+                    if (prevLogIndex >= 0 && (prevLogIndex >= server.getNextIndex() || server.getTermForEntry(prevLogIndex) != request.getPrevLogTerm())) {
                         logger.warn("Inconsistency in log: prevLogIndex " + prevLogIndex + " request prev term: " + request.getPrevLogTerm() + ", entry size: " + request.getEntries().length);
                         out.writeObject(new AppendEntriesResponse(server.getCurrentTerm().get(), false));
                         return;
@@ -87,34 +84,73 @@ public class InputServerConnection implements Runnable {
                     LogEntry[] newEntries = request.getEntries();
                     if (newEntries.length > 0) {
                         logger.info("Adding new indices");
-                        int workedLogEntryIndex = request.getPrevLogIndex() + 1;
                         for (LogEntry entry : newEntries) {
-                            if (server.getLogEntries().size() > workedLogEntryIndex) {
-                                LogEntry existingEntry = server.getLogEntries().get(workedLogEntryIndex);
-                                if (existingEntry.getTerm() != entry.getTerm()) {
-                                    server.getLogEntries().set(workedLogEntryIndex, entry);
+                            // New entries
+                            if (entry.getIndex() < server.getNextIndex()) {
+                                if (entry.getTerm() != server.getLogEntryTerm(entry.getIndex())) {
+                                    server.clearLogFromEntry(entry);
+                                    server.getLogEntries().add(entry);
                                 }
                             } else {
                                 server.getLogEntries().add(entry);
-                                workedLogEntryIndex++;
+                                server.incrementNextIndex();
                             }
                         }
                     }
 
                     if (request.getLeaderCommit() > server.getCommitIndex().get()) {
-                        logger.info("Leader commit inx: " + request.getLeaderCommit() + ", server commit:" + server.getCommitIndex().get());
-                        for (int commitInx = server.getCommitIndex().get() + 1; commitInx <= request.getLeaderCommit() && commitInx < server.getLogEntries().size(); commitInx++) {
+                        for (int commitInx = server.getCommitIndex().get() + 1; commitInx <= request.getLeaderCommit() && commitInx < server.getNextIndex(); commitInx++) {
                             logger.info("Commiting inx: " + commitInx);
-                            LogEntry entry = server.getLogEntries().get(commitInx);
-                            server.applyStateChange(entry.getChange());
-                            server.getCommitIndex().set(commitInx);
-                            server.getLastApplied().set(commitInx);
+                            LogEntry entry = server.getLogEntry(commitInx);
+                            if (entry != null) {
+                                server.applyStateChange(entry.getChange());
+                                server.getCommitIndex().set(commitInx);
+                                server.getLastApplied().set(commitInx);
+                                server.setTermOfLastApplied(entry.getTerm());
+                            } else {
+                                logger.error("Entry not in log");
+                            }
                         }
                     }
 
                     out.writeObject(new AppendEntriesResponse(server.getCurrentTerm().get(), true));
                 } else {
+                    logger.info("Append from old date");
                     out.writeObject(new AppendEntriesResponse(server.getCurrentTerm().get(), false));
+                }
+            } finally {
+                server.releaseAppendLock();
+            }
+        } else if (InstallSnapshotRequest.class.equals(o.getClass())) {
+            InstallSnapshotRequest request = (InstallSnapshotRequest) o;
+            logger.info("Received snapshot");
+            try {
+                server.getAppendLock();
+                if (request.getTerm() >= server.getCurrentTerm().get()) {
+                    server.getCurrentTerm().set(request.getTerm());
+                    server.setState(ServerState.FOLLOWER);
+                    server.setLeaderId(request.getLeaderId());
+                    if (request.getSnapshot().getLastLogIndex() >= server.getNextIndex()) {
+                        server.setMachineState(request.getSnapshot().getState());
+                        server.setServersState(request.getSnapshot().getServersConfiguration());
+                        server.setNextIndex(request.getSnapshot().getLastLogIndex() + 1);
+                        server.setTermOfLastApplied(request.getSnapshot().getLastTerm());
+                        server.getLastApplied().set(request.getSnapshot().getLastLogIndex());
+                        server.getCommitIndex().set(request.getSnapshot().getLastLogIndex());
+                        server.setLastSnapshot(request.getSnapshot());
+                        if (server.getCurrentTerm().get() < request.getSnapshot().getLastTerm()) {
+                            server.getCurrentTerm().set(request.getSnapshot().getLastTerm());
+                        }
+                        logger.info("Set Last Applied to " + request.getSnapshot().getLastLogIndex());
+                    } else {
+                        logger.info("Request is to index: " + request.getSnapshot().getLastLogIndex() + "my next index is" + server.getNextIndex());
+                        // Prefix of log
+                        server.removeEntriesUntil(request.getSnapshot().getLastLogIndex());
+                    }
+                    out.writeObject(new InstallSnapshotResponse(server.getCurrentTerm().get()));
+                } else {
+                    logger.warn("Got outdated snapshot with term: " + request.getTerm() + " current term: " + server.getCurrentTerm().get());
+                    out.writeObject(new InstallSnapshotResponse(server.getCurrentTerm().get()));
                 }
             } finally {
                 server.releaseAppendLock();
