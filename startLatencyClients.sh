@@ -68,80 +68,12 @@ ssh $node<<-EOF
 		mkdir "/local/$username"
 	fi
 	mkdir "/local/$username/raft"
-	cp -r "/var/scratch/$username/raft-impl/clients_deploy" "/local/$username"
+	cp -r "/var/scratch/$username/raft-impl/client_deploy" "/local/$username"
 	for (( i=0; i < 10; i++))
 	do
-		nohup java -jar /local/$username/clients_deploy/client-0.0.jar   $clusterAddress $i $startTime &> "/local/$(username)/output_$(i).log" &
+		echo "starting client \${i}"
+		nohup java -jar /local/$username/client_deploy/client-0.0.jar   $clusterAddress \$i $startTime &> "/local/${username}/output_\${i}.log" &
 	done
 EOF
 done
 
-## Get the current time since epoch
-currentTime=$(date +%s%3N);
-## Calculate the time until the benchmark is finished, add 7 minutes for the clients to write result into file
-let sleep_seconds=($endTime - $currentTime )/1000+420
-echo "Going to sleep for $sleep_seconds seconds"
-sleep $sleep_seconds
-
-## Collect the results from the clients
-for node in ${nodes}
-do
-echo "Connecting to node $node"
-
-## Get the client request count
-## Enter new line
-## Get the read request percentage of the client
-## Enter new line
-ssh $node<<-EOF
-	for (( i=0; i < $numberOfClientsOnNode; i++)) 
-	do
-
-		head -n 1 "/local/$username/zookeeperClient/client_\${i}_requestCount.txt" >> /var/scratch/$username/Zookeeper/zookeeperClient/$node/result.txt
-		
-		echo "" >> /var/scratch/$username/Zookeeper/zookeeperClient/$node/result.txt
-		
-		head -n 1 "/local/$username/zookeeperClient/client_\${i}_readPercentage.txt" >> /var/scratch/$username/Zookeeper/zookeeperClient/$node/reads.txt
-		
-		echo "" >> /var/scratch/$username/Zookeeper/zookeeperClient/$node/reads.txt
-	done
-EOF
-done
-
-## Read the request counts from file
-requestCount=0
-for node in ${nodes}
-do
-	while IFS= read -r line
-	do
-		requestCount=$(echo "scale=0 ; $requestCount + $line" | bc)
-	done < "/var/scratch/$username/Zookeeper/zookeeperClient/$node/result.txt"
-done
-
-readPercentage=0;
-
-
-## Read the read request percentage from file
-for node in ${nodes}
-do
-	while IFS= read -r line
-	do
-		readPercentage=$(echo "scale=16 ; $readPercentage + $line" | bc)
-	done < "/var/scratch/$username/Zookeeper/zookeeperClient/$node/reads.txt"
-done
-
-readPercentage=$(echo "scale=25 ; $readPercentage / $clients" | bc)
-requestTroughput=$(echo "scale=2 ; $requestCount / 240" | bc)
-
-echo "The test had a read percentage of ${readPercentage}%"
-echo "The test had a throughput of ${requestTroughput}"
-
-## Shutdown the Zookeeper cluster
-for node in ${zookeeperNodes}
-do
-ssh $node<<-EOF
-	/local/$username/zookeeper/bin/zkServer.sh stop
-EOF
-done
-
-## Unreserve the nodes 
-scancel -u $username
