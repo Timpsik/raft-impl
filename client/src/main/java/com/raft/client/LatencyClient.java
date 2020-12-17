@@ -40,7 +40,7 @@ public class LatencyClient {
     private long requestNr = 0;
     private long benchmarkStartTime;
 
-    private final long N = 10000;
+    private final long N = 10;
 
     public LatencyClient(String clusterAddress, int clientId, String startTime) {
         parseAndCheckStartTime(startTime);
@@ -76,7 +76,7 @@ public class LatencyClient {
     }
 
     private void start() {
-        logger.info("Creating client");
+        logger.warn("Creating client");
         Socket socket = null;
         ObjectOutputStream out = null;
         ObjectInputStream in = null;
@@ -101,7 +101,6 @@ public class LatencyClient {
                 in = new ObjectInputStream(socket.getInputStream());
                 RaftResponse response = (RaftResponse) in.readObject();
                 while(!response.isSuccess() && response.getCause() == ErrorCause.NOT_LEADER) {
-
                     logger.info("Did not send the request to leader, re-send");
                     try {
                         out.close();
