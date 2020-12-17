@@ -22,7 +22,7 @@ let startTime=$currentTime+1000*60;
 
 
 echo "Benchmark Start time: $(date -d @"$((startTime/1000))")";
-echo "$(currentTime)"
+echo $currentTime
 
 ## From https://stackoverflow.com/a/17841619
 function join_by { local d=$1; shift; local f=$1; shift; printf %s "$f" "${@/#/$d}"; }
