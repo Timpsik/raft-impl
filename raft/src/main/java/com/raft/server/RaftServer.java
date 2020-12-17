@@ -19,12 +19,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-import com.raft.requests.AckResponse;
-import com.raft.requests.AddServerRequest;
-import com.raft.requests.ChangeStateRequest;
-import com.raft.requests.ReadRequest;
-import com.raft.requests.ReadResponse;
-import com.raft.requests.RemoveServerRequest;
+import com.raft.requests.*;
 import com.raft.server.conf.Configuration;
 import com.raft.server.conf.ServerState;
 import com.raft.server.connection.RaftConnection;
@@ -50,7 +45,6 @@ public class RaftServer {
     private final int port;
     private final Random generator;
     private final ScheduledExecutorService scheduler;
-    private boolean configurationChange = false;
 
     private ServerState state = ServerState.FOLLOWER;
 
@@ -397,13 +391,14 @@ public class RaftServer {
         try {
             countDownLatch.await();
             if (successCounter.get() > servers.keySet().size() / 2) {
-                //TODO:: add NULL handle
                 Integer value = dataMap.getOrDefault(r.getVar(), null);
+                if (value == null) {
+                    return new ReadResponse(getLeaderAddress(), false, ErrorCause.ENTRY_NOT_FOUND);
+                }
                 return new ReadResponse(getLeaderAddress(), true, value);
             }
         } catch (InterruptedException e) {
             logger.error("sendLogUpdateAndApplyToState() - CountDownLatch: ", e);
-            e.printStackTrace();
         }
         return new ReadResponse(getLeaderAddress(), false, -1);
 
@@ -441,10 +436,6 @@ public class RaftServer {
         }
         //TODO:: Add new server to the configuration
         return new AckResponse(getLeaderAddress(), true);
-    }
-
-    public boolean isConfigurationChange() {
-        return configurationChange;
     }
 
     public long getTermOfLastApplied() {

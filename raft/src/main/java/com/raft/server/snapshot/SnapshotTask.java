@@ -60,6 +60,7 @@ public class SnapshotTask implements Runnable {
                         bw.write(key + "\t" + servers.get(key));
                         bw.newLine();
                     }
+                    //TODO:: Add client request info
                     bw.flush();
                     try {
                         server.getAppendLock();
