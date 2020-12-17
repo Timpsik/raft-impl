@@ -51,14 +51,14 @@ public class TestRaftClient {
                 //Enter data using BufferReader
                 BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
                 System.out.println("Enter variable name or empty String to exit: ");
-                String var = reader.readLine().strip();
+                String var = reader.readLine().trim();
                 if ("".equals(var)) {
                     break;
                 }
                 RaftRequest r;
                 if ("read".equals(var)) {
                     System.out.println("Enter variable name: ");
-                    String readVar = reader.readLine().strip();
+                    String readVar = reader.readLine().trim();
                     r = new ReadRequest(readVar,clientId,requestNr);
                 } else if("add".equals(var)) {
                     System.out.println("Enter new Server id ");
