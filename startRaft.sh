@@ -71,15 +71,17 @@ done
 function join_by { local d=$1; shift; local f=$1; shift; printf %s "$f" "${@/#/$d}"; }
 
 ## Get the Zookeeper cluster address
-clusterAddress=$(join_by ":2181," $zookeeperNodes);
+clusterAddress=$(join_by ":2181," $nodes);
 clusterAddress+=":2181";
+
+echo $clusterAddress
 
 ## Start the Raft servers
 for (( i=1; i <= $numberOfServers; i++))
 do
 	echo "Starting server in node ${nodeArray[$i-1]}"
 ssh ${nodeArray[$i-1]} <<-EOF
-	nohup java -jar /local/$username/raft_deploy/raft-0.0.jar   clusterAddress $i-1 &> /local/$username/output.log &
+	nohup java -jar /local/$username/raft_deploy/raft-0.0.jar   clusterAddress $(($i-1)) &> /local/$username/output.log &
 EOF
 
 done
