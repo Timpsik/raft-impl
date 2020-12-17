@@ -169,7 +169,7 @@ public class RaftServer {
         try {
             electionLock.lock();
             if (state == ServerState.CANDIDATE && votes.get() > servers.keySet().size() / 2) {
-                logger.warn("Elected as leader for term " + currentTerm.get() + "at " + System.nanoTime());
+                logger.warn("Elected as leader for term " + currentTerm.get() + " at " + System.currentTimeMillis());
                 state = ServerState.LEADER;
                 startHeartbeatsAndInitializeFollowerInfo();
             }
