@@ -77,10 +77,11 @@ public class RaftServer {
     private final SnapshotManager snapshotManager;
 
     public RaftServer(String[] args) {
+        logger.info("Given arguments: " + args[0] + " " + args[1]);
         String[] serverStrings = args[0].split(",");
         serverId = Integer.parseInt(args[1]);
         logger.info("I have server ID: " + serverId);
-        port = Integer.parseInt(serverStrings[(int) serverId].split(":")[1]);
+        port = Integer.parseInt(serverStrings[serverId].split(":")[1]);
         generator = new Random(serverId);
         scheduler = newScheduledThreadPool(20);
         snapshotManager = new SnapshotManager(this);
