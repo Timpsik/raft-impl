@@ -114,6 +114,7 @@ public class SnapshotManager {
                 lastStoredIndex = lastApplied;
                 lastSnapshot = new Snapshot(lastApplied, lastTerm, data, servers);
                 counter = lastNumber + 1;
+                logger.info("Loaded snapshot");
                 return true;
             } catch (IOException e) {
                 logger.error("Error when reading snapshot: ", e);

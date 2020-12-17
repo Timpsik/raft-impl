@@ -359,7 +359,7 @@ public class RaftServer {
                 }
             }
         } else if (snapshotManager.getLastSnapshot() != null && snapshotManager.getLastStoredIndex() == logEntryIndex) {
-            logger.info("Taking snapshot term");
+            logger.info("Taking snapshot term: "  + snapshotManager.getLastSnapshot().getLastTerm() + "for entry " + logEntryIndex);
             return snapshotManager.getLastSnapshot().getLastTerm();
         }
         return -1;
