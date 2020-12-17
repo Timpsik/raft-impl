@@ -58,7 +58,7 @@ public class RaftServerConnection {
     public synchronized ServerResponse sendRequestToServer(ServerRequest request){
         try {
             if (socket == null) {
-                logger.warn("Connection not initialized, creating to: " + serverAddress);
+                logger.info("Connection not initialized, creating to: " + serverAddress);
                 initialize();
             }
             out.reset();
