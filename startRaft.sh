@@ -81,7 +81,7 @@ for (( i=1; i <= $numberOfServers; i++))
 do
 	echo "Starting server in node ${nodeArray[$i-1]}"
 ssh ${nodeArray[$i-1]} <<-EOF
-	nohup java -jar /local/$username/raft_deploy/raft-0.0.jar   clusterAddress $(($i-1)) &> /local/$username/output.log &
+	nohup java -jar /local/$username/raft_deploy/raft-0.0.jar   $clusterAddress $(($i-1)) &> /local/$username/output.log &
 EOF
 
 done
