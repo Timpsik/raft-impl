@@ -36,7 +36,7 @@ public class SnapshotManager {
     }
 
     public void start() {
-        server.getScheduler().scheduleAtFixedRate(new SnapshotTask(this), 1, 1, TimeUnit.MINUTES);
+        server.getScheduler().scheduleAtFixedRate(new SnapshotTask(this), 10, 10, TimeUnit.MINUTES);
     }
 
     public boolean isStateChanged() {
