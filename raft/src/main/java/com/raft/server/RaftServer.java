@@ -239,7 +239,7 @@ public class RaftServer {
             logger.error("sendLogUpdateAndApplyToState() - CountDownLatch: ", e);
             e.printStackTrace();
         }
-        return new AckResponse(getLeaderAddress(), false);
+        return new AckResponse(getLeaderAddress(), false, ErrorCause.NOT_LEADER);
     }
 
     public void resetVotes() {

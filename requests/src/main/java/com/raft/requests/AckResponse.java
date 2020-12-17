@@ -6,4 +6,8 @@ public class AckResponse extends RaftResponse {
         super(success, leaderAddress);
     }
 
+    public AckResponse(String leaderAddress, boolean success, ErrorCause cause) {
+        super(success, leaderAddress, cause);
+    }
+
 }

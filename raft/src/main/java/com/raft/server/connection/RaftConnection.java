@@ -45,7 +45,7 @@ public class RaftConnection implements Runnable {
                     out.writeObject(changeStateResponse);
                 } else {
                     logger.info("Not leader, send leader address to client");
-                    AckResponse changeStateResponse = new AckResponse(server.getLeaderAddress(), false);
+                    AckResponse changeStateResponse = new AckResponse(server.getLeaderAddress(), false, ErrorCause.NOT_LEADER);
                     out.writeObject(changeStateResponse);
                 }
             } else if (ReadRequest.class.equals(o.getClass())) {
@@ -69,7 +69,7 @@ public class RaftConnection implements Runnable {
                     out.writeObject(changeStateResponse);
                 } else {
                     logger.info("Not leader, send leader address to client");
-                    AckResponse changeStateResponse = new AckResponse(server.getLeaderAddress(), false);
+                    AckResponse changeStateResponse = new AckResponse(server.getLeaderAddress(), false, ErrorCause.NOT_LEADER);
                     out.writeObject(changeStateResponse);
                 }
             } else if (RemoveServerRequest.class.equals(o.getClass())) {
@@ -81,7 +81,7 @@ public class RaftConnection implements Runnable {
                     out.writeObject(readResponse);
                 } else {
                     logger.info("Not leader, send leader address to client");
-                    AckResponse readResponse = new AckResponse(server.getLeaderAddress(), false);
+                    AckResponse readResponse = new AckResponse(server.getLeaderAddress(), false, ErrorCause.NOT_LEADER);
                     out.writeObject(readResponse);
                 }
             } else {
