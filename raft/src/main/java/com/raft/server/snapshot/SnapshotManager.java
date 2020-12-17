@@ -94,7 +94,7 @@ public class SnapshotManager {
                 int lastApplied = Integer.parseInt(br.readLine());
                 String line;
                 Map<String, Integer> data = new HashMap<>();
-                while (!CONFIGURATION.equals(line = br.readLine().strip())) {
+                while ((line = br.readLine()) != null && !line.startsWith(CONFIGURATION)) {
                     data.put(line.split("\t")[0], Integer.parseInt(line.split("\t")[1]));
                 }
 

@@ -77,7 +77,7 @@ public class RaftServer {
     private final SnapshotManager snapshotManager;
 
     public RaftServer(String[] args) {
-        String[] serverStrings = args[0].strip().split(",");
+        String[] serverStrings = args[0].split(",");
         serverId = Integer.parseInt(args[1]);
         logger.info("I have server ID: " + serverId);
         port = Integer.parseInt(serverStrings[(int) serverId].split(":")[1]);
