@@ -40,7 +40,7 @@ public class LatencyClient {
     private long requestNr = 0;
     private long benchmarkStartTime;
 
-    private final long N = 10;
+    private final long N = 10000;
 
     public LatencyClient(String clusterAddress, int clientId, String startTime) {
         parseAndCheckStartTime(startTime);
