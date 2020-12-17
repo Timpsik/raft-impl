@@ -30,11 +30,6 @@ public class LatencyClient {
      */
     private static final int START_TIME_IDX = 2;
 
-    /**
-     * End time of the benchmark test.
-     */
-    private static final int END_TIME_IDX = 3;
-
 
     private final Logger logger = LogManager.getLogger(LatencyClient.class);
 
@@ -44,44 +39,21 @@ public class LatencyClient {
     private final int clientId;
     private long requestNr = 0;
     private long benchmarkStartTime;
-    private long benchmarkEndTime;
 
     private final long N = 10000;
 
-    public LatencyClient(String clusterAddress, int clientId, String startTime, String endTime) {
+    public LatencyClient(String clusterAddress, int clientId, String startTime) {
         parseAndCheckStartTime(startTime);
-        parseAndCheckEndTime(endTime);
         this.clusterAddresses = clusterAddress.split(",");
         this.clientId = clientId;
     }
 
     public static void main(String[] args) throws IOException {
 
-        LatencyClient raftClient = new LatencyClient(args[CLUSTER_ADDRESS_IDX], Integer.parseInt(args[CLIENT_ID]), args[START_TIME_IDX], args[END_TIME_IDX]);
+        LatencyClient raftClient = new LatencyClient(args[CLUSTER_ADDRESS_IDX], Integer.parseInt(args[CLIENT_ID]), args[START_TIME_IDX]);
         raftClient.start();
     }
 
-    /**
-     * Check if benchmark end time is long and after start time and in the future.
-     *
-     * @param endTimeString Benchmark end time in String
-     */
-    private void parseAndCheckEndTime(String endTimeString) {
-        try {
-            benchmarkEndTime = Long.parseLong(endTimeString);
-            if (benchmarkEndTime < benchmarkStartTime) {
-                throw new IllegalArgumentException("Benchmark end time is before benchmark start time. " +
-                        "Start: " + benchmarkStartTime + ", End: " + benchmarkEndTime);
-            } else if (benchmarkEndTime < System.currentTimeMillis()) {
-                throw new IllegalArgumentException("Benchmark end time is in the past " +
-                        "Current time: " + System.currentTimeMillis() + ", End: " + benchmarkEndTime);
-            }
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("Argument at index " + END_TIME_IDX +
-                    " is expected to be long. Given: " + endTimeString +
-                    " . It is the start time of benchmark.");
-        }
-    }
 
     /**
      * Check if the start time is long and start is in the future,

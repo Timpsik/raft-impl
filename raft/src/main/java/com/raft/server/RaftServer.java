@@ -132,8 +132,8 @@ public class RaftServer {
     }
 
     public long generateNewElectionTimeout() {
-        //electionTimeout = generator.nextInt(Configuration.maxElectionTimeout - Configuration.minElectionTimeout)
-        //        + Configuration.minElectionTimeout;
+        electionTimeout = generator.nextInt(Configuration.maxElectionTimeout - Configuration.minElectionTimeout)
+                + Configuration.minElectionTimeout;
         return electionTimeout;
     }
 
