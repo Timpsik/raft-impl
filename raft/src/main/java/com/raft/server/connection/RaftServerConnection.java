@@ -65,7 +65,7 @@ public class RaftServerConnection {
             out.writeObject(request);
             return (ServerResponse) in.readObject();
         } catch (IOException | ClassNotFoundException e) {
-            logger.warn("Connection error when connecting to: " + serverAddress, e);
+            logger.info("Connection error when connecting to: " + serverAddress, e);
             closeConnections();
         }
         return null;

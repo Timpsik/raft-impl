@@ -169,7 +169,7 @@ public class RaftServer {
         try {
             electionLock.lock();
             if (state == ServerState.CANDIDATE && votes.get() > servers.keySet().size() / 2) {
-                logger.info("Elected as leader for term " + currentTerm.get());
+                logger.warn("Elected as leader for term " + currentTerm.get() + "at " + System.nanoTime());
                 state = ServerState.LEADER;
                 startHeartbeatsAndInitializeFollowerInfo();
             }
@@ -180,7 +180,7 @@ public class RaftServer {
     }
 
     private void startHeartbeatsAndInitializeFollowerInfo() {
-        logger.info("Starting heartbeats");
+        logger.warn("Starting heartbeats");
         for (int key : servers.keySet()) {
             nextIndices.put(key, nextIndex);
             matchIndices.put(key, 0);
