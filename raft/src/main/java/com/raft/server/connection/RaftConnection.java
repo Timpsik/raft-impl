@@ -91,7 +91,7 @@ public class RaftConnection implements Runnable {
             out.close();
             connection.close();
         } catch (IOException | ClassNotFoundException e) {
-            logger.error("Error when executing socket: ", e);
+            logger.info("Error when executing socket: ", e);
             try {
                 if (in != null) {
                     in.close();
