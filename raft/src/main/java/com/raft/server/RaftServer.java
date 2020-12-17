@@ -25,6 +25,11 @@ import com.raft.requests.ChangeStateRequest;
 import com.raft.requests.ReadRequest;
 import com.raft.requests.ReadResponse;
 import com.raft.requests.RemoveServerRequest;
+import com.raft.server.conf.Configuration;
+import com.raft.server.conf.ServerState;
+import com.raft.server.connection.RaftConnection;
+import com.raft.server.connection.RaftServerConnection;
+import com.raft.server.entries.*;
 import com.raft.server.jobs.AppendLogEntries;
 import com.raft.server.jobs.ElectionTimeoutChecker;
 import com.raft.server.jobs.Heartbeat;
@@ -71,7 +76,7 @@ public class RaftServer {
     private ConcurrentMap<Integer, Integer> nextIndices = new ConcurrentHashMap<>();
     private ConcurrentMap<Integer, Integer> matchIndices = new ConcurrentHashMap<>();
 
-    private ConcurrentMap<Integer, Set<Long>> clientServerMap = new ConcurrentHashMap<>();
+    private ConcurrentMap<Integer, Long> clientServerMap = new ConcurrentHashMap<>();
 
     private Map<Integer, RaftServerConnection> connections = new HashMap<>();
 
@@ -195,15 +200,14 @@ public class RaftServer {
     }
 
     public AckResponse modifyLog(ChangeStateRequest r) {
-        Set<Long> servedRequests = clientServerMap.getOrDefault(r.getClientId(), new HashSet<>());
-        if (servedRequests.contains(r.getRequestNr())) {
+        Long lastServedRequests = clientServerMap.getOrDefault(r.getClientId(), null);
+        if (lastServedRequests != null && lastServedRequests > r.getRequestNr()) {
             return new AckResponse(getLeaderAddress(), true);
         }
         LogEntry newEntry = new LogEntry(currentTerm.get(), new StateChange(r.getVar(), Integer.toString(r.getValue())), r.getClientId(), r.getRequestNr(), nextIndex);
         nextIndex++;
         logEntries.add(newEntry);
-        servedRequests.add(r.getRequestNr());
-        clientServerMap.put(r.getClientId(), servedRequests);
+        clientServerMap.put(r.getClientId(), r.getRequestNr());
         return sendLogUpdateAndApplyToState(newEntry);
     }
 
@@ -223,7 +227,7 @@ public class RaftServer {
                     Change change = logEntry.getChange();
                     if (change instanceof StateChange) {
                         StateChange stateChange = (StateChange) change;
-                        dataMap.put(stateChange.key, Integer.valueOf(stateChange.value));
+                        dataMap.put(stateChange.getKey(), Integer.valueOf(stateChange.getValue()));
                     } else if (change instanceof AddRaftServerChange) {
                         AddRaftServerChange stateChange = (AddRaftServerChange) change;
                         servers.put(stateChange.getServerId(), stateChange.getServerAddress());
@@ -378,7 +382,7 @@ public class RaftServer {
 
     public void applyStateChange(Change change) {
         if (change instanceof StateChange) {
-            dataMap.put(((StateChange) change).key, Integer.valueOf(((StateChange) change).value));
+            dataMap.put(((StateChange) change).getKey(), Integer.valueOf(((StateChange) change).getValue()));
         }
     }
 
@@ -431,16 +435,12 @@ public class RaftServer {
     }
 
     public AckResponse addNewServer(AddServerRequest r) {
-        Set<Long> servedRequests = clientServerMap.getOrDefault(r.getClientId(), new HashSet<>());
-        if (servedRequests.contains(r.getRequestNr())) {
+        Long lastServedRequests = clientServerMap.getOrDefault(r.getClientId(), null);
+        if (lastServedRequests != null && lastServedRequests > r.getRequestNr()) {
             return new AckResponse(getLeaderAddress(), true);
         }
-        LogEntry newEntry = new LogEntry(currentTerm.get(), new AddRaftServerChange(r.getNewServerId(), r.getNewServerAddress()), r.getClientId(), r.getRequestNr(),nextIndex);
-        nextIndex++;
-        logEntries.add(newEntry);
-        servedRequests.add(r.getRequestNr());
-        clientServerMap.put(r.getClientId(), servedRequests);
-        return sendLogUpdateAndApplyToState(newEntry);
+        //TODO:: Add new server to the configuration
+        return new AckResponse(getLeaderAddress(), true);
     }
 
     public boolean isConfigurationChange() {
@@ -468,9 +468,7 @@ public class RaftServer {
     }
 
     public void addServedRequest(int clientId, long requestNr) {
-        Set<Long> servedRequests = clientServerMap.getOrDefault(clientId, new HashSet<>());
-        servedRequests.add(requestNr);
-        clientServerMap.put(clientId, servedRequests);
+        clientServerMap.put(clientId, requestNr);
     }
 
     public Map<Integer, String> getServers() {
@@ -511,16 +509,14 @@ public class RaftServer {
     }
 
     public AckResponse removeServer(RemoveServerRequest r) {
-        Set<Long> servedRequests = clientServerMap.getOrDefault(r.getClientId(), new HashSet<>());
-        if (servedRequests.contains(r.getRequestNr())) {
+        Long lastServedRequests = clientServerMap.getOrDefault(r.getClientId(), null);
+        if (lastServedRequests != null && lastServedRequests > r.getRequestNr()) {
             return new AckResponse(getLeaderAddress(), true);
         }
-        LogEntry newEntry = new LogEntry(currentTerm.get(), new RemoveRaftServerChange(r.getRemovedServerId()), r.getClientId(), r.getRequestNr(),nextIndex);
-        nextIndex++;
-        logEntries.add(newEntry);
-        servedRequests.add(r.getRequestNr());
-        clientServerMap.put(r.getClientId(), servedRequests);
-        return sendLogUpdateAndApplyToState(newEntry);
+
+        clientServerMap.put(r.getClientId(), r.getRequestNr());
+        //TODO:: Remove server from configuration
+        return new AckResponse(getLeaderAddress(), true);
     }
 
     public long getLastAppliedTerm() {

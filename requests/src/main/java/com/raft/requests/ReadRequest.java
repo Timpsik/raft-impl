@@ -1,11 +1,10 @@
 package com.raft.requests;
 
-import java.io.Serializable;
-
-public class ReadRequest implements Serializable, RaftRequest {
+public class ReadRequest extends RaftRequest {
     private String var;
 
-    public ReadRequest(String var) {
+    public ReadRequest(String var, int clientId, long requestNr) {
+        super(clientId, requestNr);
         this.var = var;
     }
 

@@ -1,23 +1,9 @@
 package com.raft.requests;
 
-import java.io.Serializable;
-
-public class AckResponse implements RaftResponse {
-    private String leaderAddress;
-    private boolean success;
+public class AckResponse extends RaftResponse {
 
     public AckResponse(String leaderAddress, boolean success) {
-        this.leaderAddress = leaderAddress;
-        this.success = success;
+        super(success, leaderAddress);
     }
 
-    @Override
-    public boolean isSuccess() {
-        return success;
-    }
-
-    @Override
-    public String getLeaderAddress() {
-        return leaderAddress;
-    }
 }

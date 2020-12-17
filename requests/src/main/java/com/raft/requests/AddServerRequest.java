@@ -1,17 +1,14 @@
 package com.raft.requests;
 
-public class AddServerRequest implements RaftRequest {
+public class AddServerRequest extends RaftRequest {
 
     private final String newServerAddress;
     private final int newServerId;
-    private final int clientId;
-    private final long requestNr;
 
     public AddServerRequest(String newServerAddress, int newServerId, int clientId, long requestNr) {
+        super(clientId,requestNr);
         this.newServerAddress = newServerAddress;
         this.newServerId = newServerId;
-        this.clientId = clientId;
-        this.requestNr = requestNr;
     }
 
     public String getNewServerAddress() {
@@ -20,13 +17,5 @@ public class AddServerRequest implements RaftRequest {
 
     public int getNewServerId() {
         return newServerId;
-    }
-
-    public int getClientId() {
-        return clientId;
-    }
-
-    public long getRequestNr() {
-        return requestNr;
     }
 }

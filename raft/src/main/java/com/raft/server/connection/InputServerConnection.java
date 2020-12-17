@@ -1,5 +1,8 @@
-package com.raft.server;
+package com.raft.server.connection;
 
+import com.raft.server.RaftServer;
+import com.raft.server.conf.ServerState;
+import com.raft.server.entries.LogEntry;
 import com.raft.server.rpc.*;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -8,7 +11,6 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
-import java.util.Arrays;
 
 public class InputServerConnection implements Runnable {
     private static Logger logger = LogManager.getLogger(InputServerConnection.class);
@@ -130,6 +132,7 @@ public class InputServerConnection implements Runnable {
                     server.getCurrentTerm().set(request.getTerm());
                     server.setState(ServerState.FOLLOWER);
                     server.setLeaderId(request.getLeaderId());
+                    server.setLastHeardFromLeader(System.nanoTime());
                     if (request.getSnapshot().getLastLogIndex() >= server.getNextIndex()) {
                         server.setMachineState(request.getSnapshot().getState());
                         server.setServersState(request.getSnapshot().getServersConfiguration());
@@ -143,7 +146,7 @@ public class InputServerConnection implements Runnable {
                         }
                         logger.info("Set Last Applied to " + request.getSnapshot().getLastLogIndex());
                     } else {
-                        logger.info("Request is to index: " + request.getSnapshot().getLastLogIndex() + "my next index is" + server.getNextIndex());
+                        logger.info("Request is to index: " + request.getSnapshot().getLastLogIndex() + " my next index is" + server.getNextIndex());
                         // Prefix of log
                         server.removeEntriesUntil(request.getSnapshot().getLastLogIndex());
                     }

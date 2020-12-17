@@ -1,8 +1,8 @@
 package com.raft.server.jobs;
 
-import com.raft.server.LogEntry;
+import com.raft.server.entries.LogEntry;
 import com.raft.server.RaftServer;
-import com.raft.server.ServerState;
+import com.raft.server.conf.ServerState;
 import com.raft.server.rpc.AppendEntriesRequest;
 import com.raft.server.rpc.AppendEntriesResponse;
 import com.raft.server.rpc.InstallSnapshotRequest;

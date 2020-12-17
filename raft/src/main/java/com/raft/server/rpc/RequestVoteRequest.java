@@ -1,15 +1,13 @@
 package com.raft.server.rpc;
 
-import java.io.Serializable;
-
 public class RequestVoteRequest extends ServerRequest {
 
-    int candidateId;
-    long lastLogIndex;
-    long lastLogTerm;
+    private int candidateId;
+    private long lastLogIndex;
+    private long lastLogTerm;
 
     public RequestVoteRequest(long term, int candidateId, long lastLogIndex, long lastLogTerm) {
-        this.term = term;
+        super(term);
         this.candidateId = candidateId;
         this.lastLogIndex = lastLogIndex;
         this.lastLogTerm = lastLogTerm;

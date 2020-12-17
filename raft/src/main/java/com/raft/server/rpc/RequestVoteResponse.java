@@ -1,13 +1,11 @@
 package com.raft.server.rpc;
 
-import java.io.Serializable;
-
 public class RequestVoteResponse extends ServerResponse {
 
     private boolean voteGranted;
 
     public RequestVoteResponse(long term, boolean voteGranted) {
-        this.term = term;
+        super(term);
         this.voteGranted = voteGranted;
     }
 

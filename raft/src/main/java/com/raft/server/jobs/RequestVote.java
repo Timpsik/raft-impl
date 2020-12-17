@@ -1,13 +1,11 @@
 package com.raft.server.jobs;
 
 import com.raft.server.RaftServer;
-import com.raft.server.ServerState;
+import com.raft.server.conf.ServerState;
 import com.raft.server.rpc.RequestVoteRequest;
 import com.raft.server.rpc.RequestVoteResponse;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-
-import java.io.IOException;
 
 public class RequestVote implements Runnable {
     private static Logger logger = LogManager.getLogger(RequestVote.class);

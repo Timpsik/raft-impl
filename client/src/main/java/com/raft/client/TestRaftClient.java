@@ -4,13 +4,19 @@ import java.io.*;
 import java.net.Socket;
 import java.util.Random;
 
-import com.raft.requests.*;
+import com.raft.requests.AddServerRequest;
+import com.raft.requests.ChangeStateRequest;
+import com.raft.requests.RaftRequest;
+import com.raft.requests.RaftResponse;
+import com.raft.requests.ReadRequest;
+import com.raft.requests.ReadResponse;
+import com.raft.requests.RemoveServerRequest;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-public class RaftClient {
+public class TestRaftClient {
 
-    private final Logger logger = LogManager.getLogger(RaftClient.class);
+    private final Logger logger = LogManager.getLogger(TestRaftClient.class);
 
     private String[] clusterAddresses;
     private String leaderAddress = "";
@@ -18,13 +24,13 @@ public class RaftClient {
     private final int clientId;
     private long requestNr = 0;
 
-    public RaftClient(String clusterAddress, int clientId) {
+    public TestRaftClient(String clusterAddress, int clientId) {
         this.clusterAddresses = clusterAddress.split(",");
         this.clientId = clientId;
     }
 
     public static void main(String[] args) throws IOException {
-        RaftClient raftClient = new RaftClient(args[0], Integer.parseInt(args[1]));
+        TestRaftClient raftClient = new TestRaftClient(args[0], Integer.parseInt(args[1]));
         raftClient.start();
     }
 
@@ -53,7 +59,7 @@ public class RaftClient {
                 if ("read".equals(var)) {
                     System.out.println("Enter variable name: ");
                     String readVar = reader.readLine().strip();
-                    r = new ReadRequest(readVar);
+                    r = new ReadRequest(readVar,clientId,requestNr);
                 } else if("add".equals(var)) {
                     System.out.println("Enter new Server id ");
                     int value = Integer.parseInt(reader.readLine());
@@ -94,21 +100,11 @@ public class RaftClient {
                 }
                 if(response instanceof ReadResponse) {
                     System.out.println("Value stored: "  + ((ReadResponse) response).getValue());
-
-                } else if ( response instanceof ChangeStateResponse) {
-                    System.out.println("State changed");
-                } else if ( response instanceof AddServerResponse) {
-                    System.out.println("Server added");
-                } else if ( response instanceof RemoveServerResponse) {
-                    System.out.println("Server removed");
                 }
                 logger.info("Request was successful");
             }
-
-
         } catch (IOException | ClassNotFoundException e) {
-            System.out.println("Error: ");
-            e.printStackTrace();
+            logger.info("Error: ", e);
         } finally {
             if (socket != null) {
                 try {

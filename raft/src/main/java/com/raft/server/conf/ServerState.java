@@ -1,8 +1,7 @@
-package com.raft.server;
+package com.raft.server.conf;
 
 public enum ServerState {
     LEADER,
     CANDIDATE,
-    FOLLOWER,
-    CATCHUP
+    FOLLOWER
 }

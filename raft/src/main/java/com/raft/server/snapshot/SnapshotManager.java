@@ -14,14 +14,14 @@ import java.util.concurrent.TimeUnit;
 
 public class SnapshotManager {
 
-    private static Logger logger = LogManager.getLogger(SnapshotManager.class);
+    private static final Logger logger = LogManager.getLogger(SnapshotManager.class);
+    private static final DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyyMMdd_HHmm");
 
     private int counter = 0;
     private final RaftServer server;
     private final String FILE_PREFIX = "raft_snapshot";
     private final String DIR_NAME = "snapshots";
     private int lastStoredIndex = -1;
-    DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyyMMdd_HHmm");
     private Snapshot lastSnapshot = null;
     public static final String CONFIGURATION = "Configuration";
 
@@ -35,19 +35,8 @@ public class SnapshotManager {
         file.mkdir();
     }
 
-
     public void start() {
         server.getScheduler().scheduleAtFixedRate(new SnapshotTask(this), 1, 1, TimeUnit.MINUTES);
-    }
-
-    public int getCounter() {
-        return counter;
-    }
-
-    public int getCounterAndIncrement() {
-        int returnValue = counter;
-        counter++;
-        return returnValue;
     }
 
     public boolean isStateChanged() {

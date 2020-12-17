@@ -1,27 +1,23 @@
 package com.raft.server.rpc;
 
-import com.raft.server.LogEntry;
-
-import java.io.Serializable;
+import com.raft.server.entries.LogEntry;
 
 public final class AppendEntriesRequest extends ServerRequest {
 
-    int leaderId;
-    long prevLogTerm;
-    int prevLogIndex;
-    int leaderCommit;
-    LogEntry[] entries;
+    private int leaderId;
+    private long prevLogTerm;
+    private int prevLogIndex;
+    private int leaderCommit;
+    private LogEntry[] entries;
 
     public AppendEntriesRequest(long term, int leaderId, long prevLogTerm, int prevLogIndex, int leaderCommit, LogEntry[] entries) {
-        this.term = term;
+        super(term);
         this.leaderId = leaderId;
         this.prevLogTerm = prevLogTerm;
         this.prevLogIndex = prevLogIndex;
         this.leaderCommit = leaderCommit;
         this.entries = entries;
     }
-
-
 
     public int getLeaderId() {
         return leaderId;

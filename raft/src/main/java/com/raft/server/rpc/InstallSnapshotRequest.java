@@ -8,9 +8,9 @@ public class InstallSnapshotRequest extends ServerRequest {
     private long term;
 
     public InstallSnapshotRequest(long term, int leaderId, Snapshot snapshot) {
+        super(term);
         this.leaderId = leaderId;
         this.snapshot = snapshot;
-        this.term = term;
     }
 
     public int getLeaderId() {
@@ -21,8 +21,4 @@ public class InstallSnapshotRequest extends ServerRequest {
         return snapshot;
     }
 
-    @Override
-    public long getTerm() {
-        return term;
-    }
 }

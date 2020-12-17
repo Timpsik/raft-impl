@@ -1,6 +1,5 @@
-package com.raft.server;
+package com.raft.server.connection;
 
-import com.raft.server.jobs.Heartbeat;
 import com.raft.server.rpc.ServerRequest;
 import com.raft.server.rpc.ServerResponse;
 import org.apache.logging.log4j.LogManager;
@@ -10,7 +9,6 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
-import java.net.UnknownHostException;
 
 public class RaftServerConnection {
 
@@ -72,6 +70,4 @@ public class RaftServerConnection {
         }
         return null;
     }
-
-
 }

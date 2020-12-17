@@ -1,4 +1,4 @@
-package com.raft.server;
+package com.raft.server.conf;
 
 public final class Configuration {
     public static int maxElectionTimeout = 300;

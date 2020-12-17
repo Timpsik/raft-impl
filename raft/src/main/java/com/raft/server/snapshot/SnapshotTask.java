@@ -24,8 +24,8 @@ public class SnapshotTask implements Runnable {
         logger.info("Running snapshot");
         if (manager.isStateChanged()) {
             RaftServer server = manager.getServer();
-            int lastApplied = -1;
-            long termOfLastApplied = -1;
+            int lastApplied;
+            long termOfLastApplied;
             Map<String, Integer> state = new HashMap<>();
             Map<Integer, String> servers = new HashMap<>();
 

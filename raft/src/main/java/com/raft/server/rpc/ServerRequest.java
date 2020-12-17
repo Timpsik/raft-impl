@@ -5,6 +5,10 @@ import java.io.Serializable;
 public abstract class ServerRequest  implements Serializable {
     long term;
 
+    public ServerRequest(long term) {
+        this.term = term;
+    }
+
     public long getTerm() {
         return term;
     }

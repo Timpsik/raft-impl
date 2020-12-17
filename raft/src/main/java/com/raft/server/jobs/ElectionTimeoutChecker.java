@@ -1,7 +1,7 @@
 package com.raft.server.jobs;
 
 import com.raft.server.RaftServer;
-import com.raft.server.ServerState;
+import com.raft.server.conf.ServerState;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 

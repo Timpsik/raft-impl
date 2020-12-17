@@ -2,17 +2,14 @@ package com.raft.requests;
 
 import java.io.Serializable;
 
-public class ChangeStateRequest implements Serializable,RaftRequest {
+public class ChangeStateRequest extends RaftRequest {
     private String var;
     private int value;
-    private int clientId;
-    private long requestNr;
 
     public ChangeStateRequest(String var, int value, int clientId, long requestNr) {
+        super(clientId, requestNr);
         this.var = var;
         this.value = value;
-        this.clientId = clientId;
-        this.requestNr = requestNr;
     }
 
     public String getVar() {
@@ -21,13 +18,5 @@ public class ChangeStateRequest implements Serializable,RaftRequest {
 
     public int getValue() {
         return value;
-    }
-
-    public int getClientId() {
-        return clientId;
-    }
-
-    public long getRequestNr() {
-        return requestNr;
     }
 }

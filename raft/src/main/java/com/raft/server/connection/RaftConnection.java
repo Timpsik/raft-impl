@@ -1,6 +1,9 @@
-package com.raft.server;
+package com.raft.server.connection;
 
 import com.raft.requests.*;
+import com.raft.server.RaftServer;
+import com.raft.server.conf.ServerState;
+import com.raft.server.entries.LogEntry;
 import com.raft.server.rpc.*;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -193,6 +196,7 @@ public class RaftConnection implements Runnable {
                     server.getCurrentTerm().set(request.getTerm());
                     server.setState(ServerState.FOLLOWER);
                     server.setLeaderId(request.getLeaderId());
+                    server.setLastHeardFromLeader(System.nanoTime());
                     if (request.getSnapshot().getLastLogIndex() > server.getNextIndex()) {
                         server.setMachineState(request.getSnapshot().getState());
                         server.setServersState(request.getSnapshot().getServersConfiguration());

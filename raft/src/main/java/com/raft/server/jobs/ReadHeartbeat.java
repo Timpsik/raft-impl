@@ -1,9 +1,9 @@
 package com.raft.server.jobs;
 
-import com.raft.server.Configuration;
-import com.raft.server.LogEntry;
+import com.raft.server.conf.Configuration;
+import com.raft.server.entries.LogEntry;
 import com.raft.server.RaftServer;
-import com.raft.server.ServerState;
+import com.raft.server.conf.ServerState;
 import com.raft.server.rpc.AppendEntriesRequest;
 import com.raft.server.rpc.AppendEntriesResponse;
 import org.apache.logging.log4j.LogManager;

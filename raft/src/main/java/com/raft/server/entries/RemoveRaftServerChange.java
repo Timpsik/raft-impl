@@ -1,4 +1,4 @@
-package com.raft.server;
+package com.raft.server.entries;
 
 public class RemoveRaftServerChange extends Change {
 
