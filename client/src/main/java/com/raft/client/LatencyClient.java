@@ -86,6 +86,8 @@ public class LatencyClient {
             while (i < N) {
                 if (!started && System.currentTimeMillis() > benchmarkStartTime) {
                     started = true;
+                } else {
+                    continue;
                 }
                 String serverToConnect = leaderAddress;
                 if ("".equals(serverToConnect)) {
