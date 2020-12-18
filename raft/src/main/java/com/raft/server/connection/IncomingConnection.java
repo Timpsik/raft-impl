@@ -169,7 +169,7 @@ public class IncomingConnection implements Runnable {
                     raftServer.convertToFollower(request);
                     int prevLogIndex = request.getPrevLogIndex();
                     // Check if logs match with leader
-                    if (prevLogIndex >= 0 && (prevLogIndex >= raftServer.getNextIndex() || raftServer.getTermForEntry(prevLogIndex) != request.getPrevLogTerm())) {
+                    if (prevLogIndex >= 0 && (prevLogIndex >= raftServer.getNextIndex() || raftServer.getLogEntryTerm(prevLogIndex) != request.getPrevLogTerm())) {
                         logger.warn("Inconsistency in log: prevLogIndex " + prevLogIndex + " request prev term: " + request.getPrevLogTerm());
                         out.writeObject(new AppendEntriesResponse(raftServer.getCurrentTerm(), false));
                         return true;
@@ -184,10 +184,12 @@ public class IncomingConnection implements Runnable {
                                 if (entry.getTerm() != raftServer.getLogEntryTerm(entry.getIndex())) {
                                     raftServer.clearLogFromEntry(entry);
                                     raftServer.getLogEntries().add(entry);
+                                    raftServer.addServedRequest(entry.getClientId(),entry.getRequestNr());
                                 }
                             } else {
                                 raftServer.getLogEntries().add(entry);
                                 raftServer.incrementNextIndex();
+                                raftServer.addServedRequest(entry.getClientId(),entry.getRequestNr());
                             }
                         }
                     }

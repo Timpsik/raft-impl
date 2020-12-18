@@ -90,7 +90,7 @@ public class ServerInConnection implements Runnable {
                 if (request.getTerm() >= server.getCurrentTerm()) {
                     server.convertToFollower(request);
                     int prevLogIndex = request.getPrevLogIndex();
-                    if (prevLogIndex >= 0 && (prevLogIndex >= server.getNextIndex() || server.getTermForEntry(prevLogIndex) != request.getPrevLogTerm())) {
+                    if (prevLogIndex >= 0 && (prevLogIndex >= server.getNextIndex() || server.getLogEntryTerm(prevLogIndex) != request.getPrevLogTerm())) {
                         logger.warn("Inconsistency in log: prevLogIndex " + prevLogIndex + " request prev term: " + request.getPrevLogTerm() + ", entry size: " + request.getEntries().length);
                         out.writeObject(new AppendEntriesResponse(server.getCurrentTerm(), false));
                         return;
@@ -104,10 +104,12 @@ public class ServerInConnection implements Runnable {
                             if (entry.getIndex() < server.getNextIndex()) {
                                 if (entry.getTerm() != server.getLogEntryTerm(entry.getIndex())) {
                                     server.clearLogFromEntry(entry);
+                                    server.addServedRequest(entry.getClientId(),entry.getRequestNr());
                                     server.getLogEntries().add(entry);
                                 }
                             } else {
                                 server.getLogEntries().add(entry);
+                                server.addServedRequest(entry.getClientId(),entry.getRequestNr());
                                 server.incrementNextIndex();
                             }
                         }
@@ -130,7 +132,7 @@ public class ServerInConnection implements Runnable {
 
                     out.writeObject(new AppendEntriesResponse(server.getCurrentTerm(), true));
                 } else {
-                    logger.info("Append from old date");
+                    logger.info("Append from old term");
                     out.writeObject(new AppendEntriesResponse(server.getCurrentTerm(), false));
                 }
             } finally {

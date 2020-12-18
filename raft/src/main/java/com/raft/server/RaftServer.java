@@ -17,18 +17,26 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-import com.raft.requests.*;
+import com.raft.requests.AckResponse;
+import com.raft.requests.AddServerRequest;
+import com.raft.requests.ChangeStateRequest;
+import com.raft.requests.ErrorCause;
+import com.raft.requests.ReadRequest;
+import com.raft.requests.ReadResponse;
+import com.raft.requests.RemoveServerRequest;
 import com.raft.server.conf.Configuration;
 import com.raft.server.conf.ServerState;
 import com.raft.server.connection.IncomingConnection;
 import com.raft.server.connection.ServerOutConnection;
-import com.raft.server.entries.*;
+import com.raft.server.entries.AddRaftServerChange;
+import com.raft.server.entries.Change;
+import com.raft.server.entries.LogEntry;
+import com.raft.server.entries.RemoveRaftServerChange;
+import com.raft.server.entries.StateChange;
 import com.raft.server.jobs.AppendLogEntries;
 import com.raft.server.jobs.ElectionTimeoutChecker;
 import com.raft.server.jobs.Heartbeat;
-import com.raft.server.jobs.ReadHeartbeat;
 import com.raft.server.jobs.RequestVote;
-import com.raft.server.rpc.InstallSnapshotRequest;
 import com.raft.server.rpc.ServerRequest;
 import com.raft.server.snapshot.Snapshot;
 import com.raft.server.snapshot.SnapshotManager;
@@ -41,51 +49,141 @@ public class RaftServer {
 
     private static Logger logger = LogManager.getLogger(RaftServer.class);
 
+    /**
+     * Server id
+     */
     private final int serverId;
+
+    /**
+     * Port of the server socket
+     */
     private final int port;
     private final Random generator;
+
+    /**
+     * Scheduler of periodic tasks
+     */
     private final ScheduledExecutorService scheduler;
 
+    /**
+     * State of the server, start as a follower
+     */
     private ServerState state = ServerState.FOLLOWER;
 
+    /**
+     * Map, key is the id and value is the address of the server
+     */
     private Map<Integer, String> servers = new HashMap<>();
 
+    /**
+     * Term of the server
+     */
     private AtomicLong currentTerm = new AtomicLong(-1);
+
+    /**
+     * Id of the server that received vote for term
+     */
     private AtomicLong votedFor = new AtomicLong(-1);
+
+    /**
+     * Votes for server, each server has one vote from itself if it converts to candidate.
+     */
     private AtomicInteger votes = new AtomicInteger(1);
+
+    /**
+     * Election timeout to start new election in ms
+     */
     private int electionTimeout = 150;
+
+    /**
+     * Last time heard from leader in nano seconds
+     */
     private AtomicLong lastHeardFromLeader = new AtomicLong();
+
+    /**
+     * Lock for using term in election situations
+     */
     private Lock electionLock = new ReentrantLock();
+
+    /**
+     * Lock for appending entries to log
+     */
     private Lock appendLock = new ReentrantLock();
 
+    /**
+     * Id of the current leader
+     */
     private int leaderId;
 
+    /**
+     * Last commited index to the state
+     */
     private AtomicInteger commitIndex = new AtomicInteger(-1);
+
+    /**
+     *  Last log entry added to the log
+     */
     private AtomicInteger lastApplied = new AtomicInteger(-1);
+
+    /**
+     * Index of the next new entry
+     */
     private int nextIndex = 0;
+
+    /**
+     * Term of the last applied index
+     */
     private long termOfLastApplied = -1;
+
+    /**
+     * Storage, keys are variable names and values are integers
+     */
     private ConcurrentMap<String, Integer> dataMap = new ConcurrentHashMap<>();
+
+    /**
+     * Log entry list
+     */
     private List<LogEntry> logEntries = new ArrayList<>();
 
+    /**
+     * Next indices for all followers
+     */
     private ConcurrentMap<Integer, Integer> nextIndices = new ConcurrentHashMap<>();
+
+    /**
+     * Matching log index for all followers
+     */
     private ConcurrentMap<Integer, Integer> matchIndices = new ConcurrentHashMap<>();
 
+    /**
+     * Map for storing client  and its last request
+     */
     private ConcurrentMap<Integer, Long> clientServerMap = new ConcurrentHashMap<>();
 
+    /**
+     * Connections between servers
+     */
     private Map<Integer, ServerOutConnection> connections = new HashMap<>();
 
+    /**
+     * Manages snapshots
+     */
     private final SnapshotManager snapshotManager;
 
     public RaftServer(String[] args) {
         logger.info("Given arguments: " + args[0] + " " + args[1]);
+        // Split the server addresses
         String[] serverStrings = args[0].split(",");
+        // Get the id of the server
         serverId = Integer.parseInt(args[1]);
         logger.info("I have server ID: " + serverId);
+        // Get the port
         port = Integer.parseInt(serverStrings[serverId].split(":")[1]);
         generator = new Random(serverId);
         scheduler = newScheduledThreadPool(20);
         snapshotManager = new SnapshotManager(this);
-        if (snapshotManager.loadSnapshot() ) {
+        // Try to load snapshot if there exists one
+        if (snapshotManager.loadSnapshot()) {
             for (int id : servers.keySet()) {
                 if (id != serverId) {
                     if (logger.isDebugEnabled()) {
@@ -95,6 +193,7 @@ public class RaftServer {
                 }
             }
         } else {
+            // Store given servers and try to create connections to them
             for (int i = 0; i < serverStrings.length; i++) {
                 if (i != serverId) {
                     if (logger.isDebugEnabled()) {
@@ -105,27 +204,32 @@ public class RaftServer {
                 servers.put(i, serverStrings[i]);
             }
         }
-
+        // Initialize last heard from leader
         lastHeardFromLeader.set(System.nanoTime());
         startServer();
     }
 
     private void startServer() {
+        // Generate next election timeout
         generateNewElectionTimeout();
         if (logger.isDebugEnabled()) {
             logger.debug("Next election time out is: " + electionTimeout + "ms");
         }
+        // Schedule election timeout checker
         scheduler.schedule(new ElectionTimeoutChecker(this), electionTimeout, TimeUnit.MILLISECONDS);
         snapshotManager.start();
+
         try {
+            // Create socket to listen to new connections
             ServerSocket socket = new ServerSocket(port);
             while (true) {
+                // Accept incoming connections
                 IncomingConnection incomingConnection = new IncomingConnection(socket.accept(), this);
                 Thread thread = new Thread(incomingConnection);
                 thread.start();
             }
         } catch (IOException e) {
-            e.printStackTrace();
+            logger.warn("Exception in accepting new connection: ", e);
         }
     }
 
@@ -133,12 +237,19 @@ public class RaftServer {
         RaftServer raftServer = new RaftServer(args);
     }
 
+    /**
+     * Generate new election timeout
+     * @return new time in ms to check if the leader is alive
+     */
     public long generateNewElectionTimeout() {
         electionTimeout = generator.nextInt(Configuration.maxElectionTimeout - Configuration.minElectionTimeout)
                 + Configuration.minElectionTimeout;
         return electionTimeout;
     }
 
+    /**
+     * Convert to candidate state
+     */
     public void convertToCandidate() {
         if (votedFor.compareAndSet(-1, serverId)) {
             try {
@@ -154,6 +265,9 @@ public class RaftServer {
 
     }
 
+    /**
+     * Send vote requests to other servers
+     */
     public void sendVoteRequests() {
         for (int key : servers.keySet()) {
             if (key != serverId) {
@@ -164,6 +278,9 @@ public class RaftServer {
         }
     }
 
+    /**
+     * Add one received win and check if enough votes to become leader
+     */
     public void addVoteAndCheckWin() {
         votes.incrementAndGet();
         try {
@@ -194,18 +311,35 @@ public class RaftServer {
         votedFor.set(-1);
     }
 
+    /**
+     *  Add new log entry
+     * @param r request from client
+     * @return
+     */
     public AckResponse modifyLog(ChangeStateRequest r) {
         Long lastServedRequests = clientServerMap.getOrDefault(r.getClientId(), null);
+        // Check if request is already serverd
         if (lastServedRequests != null && lastServedRequests > r.getRequestNr()) {
             return new AckResponse(getLeaderAddress(), false, ErrorCause.ALREADY_PROCESSED);
         }
-        LogEntry newEntry = new LogEntry(currentTerm.get(), new StateChange(r.getVar(), Integer.toString(r.getValue())), r.getClientId(), r.getRequestNr(), nextIndex);
-        nextIndex++;
-        logEntries.add(newEntry);
-        clientServerMap.put(r.getClientId(), r.getRequestNr());
+        LogEntry newEntry;
+        try {
+            appendLock.lock();
+            newEntry = new LogEntry(currentTerm.get(), new StateChange(r.getVar(), Integer.toString(r.getValue())), r.getClientId(), r.getRequestNr(), nextIndex);
+            nextIndex++;
+            logEntries.add(newEntry);
+            clientServerMap.put(r.getClientId(), r.getRequestNr());
+        } finally {
+            appendLock.unlock();
+        }
         return sendLogUpdateAndApplyToState(newEntry);
     }
 
+    /**
+     * Send the log update to other servers
+     * @param logEntry
+     * @return
+     */
     private AckResponse sendLogUpdateAndApplyToState(LogEntry logEntry) {
         CountDownLatch countDownLatch = new CountDownLatch(servers.keySet().size() / 2);
         AtomicInteger successCounter = new AtomicInteger(1);
@@ -215,7 +349,9 @@ public class RaftServer {
             }
         }
         try {
+            // Wait for answers from half of the cluster
             countDownLatch.await();
+            // If the requests were succesful commit the change
             if (successCounter.get() > servers.keySet().size() / 2) {
                 try {
                     appendLock.lock();
@@ -224,8 +360,7 @@ public class RaftServer {
                         StateChange stateChange = (StateChange) change;
                         dataMap.put(stateChange.getKey(), Integer.valueOf(stateChange.getValue()));
                     } else if (change instanceof AddRaftServerChange) {
-                        AddRaftServerChange stateChange = (AddRaftServerChange) change;
-                        servers.put(stateChange.getServerId(), stateChange.getServerAddress());
+
                     } else if (change instanceof RemoveRaftServerChange) {
 
                     }
@@ -239,7 +374,6 @@ public class RaftServer {
             }
         } catch (InterruptedException e) {
             logger.error("sendLogUpdateAndApplyToState() - CountDownLatch: ", e);
-            e.printStackTrace();
         }
         return new AckResponse(getLeaderAddress(), false, ErrorCause.NOT_LEADER);
     }
@@ -280,10 +414,15 @@ public class RaftServer {
         this.lastApplied.set(lastApplied);
     }
 
+    /**
+     * Get the term of the last entry in log
+     * @return
+     */
     public long getLastLogEntryTerm() {
         if (logEntries.size() != 0) {
             return logEntries.get(logEntries.size() - 1).getTerm();
         }
+        // If  there are no logs in list try to check what is the last included log in the snapshot
         if (snapshotManager.getLastSnapshot() != null) {
             return snapshotManager.getLastSnapshot().getLastTerm();
         }
@@ -292,10 +431,6 @@ public class RaftServer {
 
     public void setState(ServerState state) {
         this.state = state;
-    }
-
-    public Random getGenerator() {
-        return generator;
     }
 
     public long getLastHeardFromLeader() {
@@ -342,6 +477,11 @@ public class RaftServer {
         return nextIndex;
     }
 
+    /**
+     * Get all log indices from given index
+     * @param startIndex index to get all indices since
+     * @return
+     */
     public LogEntry[] getLogEntriesSince(int startIndex) {
         if (startIndex > snapshotManager.getLastStoredIndex()) {
             for (int i = 0; i < logEntries.size(); i++) {
@@ -358,6 +498,11 @@ public class RaftServer {
         return new LogEntry[0];
     }
 
+    /**
+     * Reduce the next index for given server
+     * @param serverId server id of the server for which to reduce the server id
+     * @return
+     */
     public int reduceAndGetNextIndex(int serverId) {
         int nextIndex = nextIndices.get(serverId);
         nextIndex--;
@@ -365,7 +510,13 @@ public class RaftServer {
         return nextIndex;
     }
 
+    /**
+     * Get Term of the log entry at give index
+     * @param logEntryIndex index of the log entry for which term is needed
+     * @return
+     */
     public long getLogEntryTerm(int logEntryIndex) {
+        // Check if index is in log
         if (logEntries.size() != 0 && logEntryIndex >= logEntries.get(0).getIndex()) {
             for (int i = 0; i < logEntries.size(); i++) {
                 if (logEntries.get(i).getIndex() == logEntryIndex) {
@@ -373,7 +524,8 @@ public class RaftServer {
                 }
             }
         } else if (snapshotManager.getLastSnapshot() != null && snapshotManager.getLastStoredIndex() == logEntryIndex) {
-            logger.info("Taking snapshot term: "  + snapshotManager.getLastSnapshot().getLastTerm() + "for entry " + logEntryIndex);
+            // If it is the last entry in snapshot use the snapshot last included term
+            logger.info("Taking snapshot term: " + snapshotManager.getLastSnapshot().getLastTerm() + "for entry " + logEntryIndex);
             return snapshotManager.getLastSnapshot().getLastTerm();
         }
         return -1;
@@ -387,22 +539,33 @@ public class RaftServer {
         matchIndices.put(serverId, newNextIndex);
     }
 
+    /**
+     * Commit the state change
+     */
     public void applyStateChange(Change change) {
         if (change instanceof StateChange) {
             dataMap.put(((StateChange) change).getKey(), Integer.valueOf(((StateChange) change).getValue()));
         }
     }
 
+    /**
+     * Handle the read request from client
+     * @param r read request
+     * @return response to the client
+     */
     public ReadResponse readFromState(ReadRequest r) {
         CountDownLatch countDownLatch = new CountDownLatch(servers.keySet().size() / 2);
         AtomicInteger successCounter = new AtomicInteger(1);
+        // Send heartbeats
         for (int key : servers.keySet()) {
             if (key != serverId) {
-                new Thread(new ReadHeartbeat(this, servers.get(key), key, countDownLatch, successCounter)).start();
+                new Thread(new AppendLogEntries(this, servers.get(key), key, countDownLatch, successCounter)).start();
             }
         }
         try {
+            // Wait for responses from other followers
             countDownLatch.await();
+            // If majority of heartbeats was successful, respond to client
             if (successCounter.get() > servers.keySet().size() / 2) {
                 Integer value = dataMap.getOrDefault(r.getVar(), null);
                 if (value == null) {
@@ -413,7 +576,7 @@ public class RaftServer {
         } catch (InterruptedException e) {
             logger.error("sendLogUpdateAndApplyToState() - CountDownLatch: ", e);
         }
-        return new ReadResponse(getLeaderAddress(), false, -1);
+        return new ReadResponse(getLeaderAddress(), false, ErrorCause.REQUEST_FAILED);
 
 
     }
@@ -442,6 +605,11 @@ public class RaftServer {
         appendLock.unlock();
     }
 
+    /**
+     * Add new server to the configuration
+     * @param r
+     * @return
+     */
     public AckResponse addNewServer(AddServerRequest r) {
         Long lastServedRequests = clientServerMap.getOrDefault(r.getClientId(), null);
         if (lastServedRequests != null && lastServedRequests > r.getRequestNr()) {
@@ -463,14 +631,11 @@ public class RaftServer {
         return dataMap;
     }
 
-    public void cleanLogUntil(int lastApplied) {
-        if (lastApplied + 1 == logEntries.size()) {
-            logEntries.clear();
-        } else {
-            logEntries = logEntries.subList(lastApplied + 1, logEntries.size());
-        }
-    }
-
+    /**
+     * Update the last served request for client
+     * @param clientId id of the client
+     * @param requestNr new request number for client
+     */
     public void addServedRequest(int clientId, long requestNr) {
         clientServerMap.put(clientId, requestNr);
     }
@@ -479,6 +644,9 @@ public class RaftServer {
         return servers;
     }
 
+    /**
+     * Increment the next index for new entry
+     */
     public void incrementNextIndex() {
         nextIndex++;
     }
@@ -501,6 +669,10 @@ public class RaftServer {
         this.nextIndex = nextIndex;
     }
 
+    /**
+     * Remove all logs until the given index
+     * @param lastLogIndex
+     */
     public void removeEntriesUntil(int lastLogIndex) {
         for (int i = 0; i < logEntries.size(); i++) {
             if (logEntries.get(i).getIndex() > lastLogIndex) {
@@ -512,6 +684,11 @@ public class RaftServer {
         }
     }
 
+    /**
+     * Remove server from configuration
+     * @param r request sent by the client
+     * @return
+     */
     public AckResponse removeServer(RemoveServerRequest r) {
         Long lastServedRequests = clientServerMap.getOrDefault(r.getClientId(), null);
         if (lastServedRequests != null && lastServedRequests > r.getRequestNr()) {
@@ -523,7 +700,12 @@ public class RaftServer {
         return new AckResponse(getLeaderAddress(), true);
     }
 
+    /**
+     * Get the term of last applied entry
+     * @return
+     */
     public long getLastAppliedTerm() {
+        // Get it from log
         if (logEntries.size() != 0 && lastApplied.get() > logEntries.get(0).getIndex()) {
             for (int i = 0; i < logEntries.size(); i++) {
                 if (logEntries.get(i).getIndex() == lastApplied.get()) {
@@ -531,45 +713,41 @@ public class RaftServer {
                 }
             }
         } else if (snapshotManager.getLastSnapshot() != null) {
+            // Get it from snapshot
             return snapshotManager.getLastSnapshot().getLastTerm();
         }
         return -1;
     }
 
-    public long getTermForEntry(int entryIndex) {
-        if (entryIndex < snapshotManager.getLastStoredIndex()) {
-            return -1;
-        } else if(snapshotManager.getLastSnapshot() != null && entryIndex == snapshotManager.getLastStoredIndex()) {
-            return snapshotManager.getLastSnapshot().getLastTerm();
-        } else {
-            for (int i = 0; i < logEntries.size(); i++) {
-                if (logEntries.get(i).getIndex() == entryIndex) {
-                    return logEntries.get(i).getTerm();
-                }
-            }
-        }
-        return -1;
-    }
 
     public void setLastSnapshot(Snapshot snapshot) {
         snapshotManager.setLastSnapshot(snapshot);
     }
 
+    /**
+     *  Clear log after given entry
+     * @param entry
+     */
     public void clearLogFromEntry(LogEntry entry) {
         for (int i = 0; i < logEntries.size(); i++) {
-            if (logEntries.get(i).getIndex() == entry.getIndex()){
-                logEntries.subList(i,logEntries.size()).clear();
+            if (logEntries.get(i).getIndex() == entry.getIndex()) {
+                logEntries.subList(i, logEntries.size()).clear();
                 nextIndex = entry.getIndex() + 1;
                 break;
             }
         }
     }
 
+    /**
+     * Get log entry at given index
+     * @param commitInx
+     * @return
+     */
     public LogEntry getLogEntry(int commitInx) {
         if (commitInx <= snapshotManager.getLastStoredIndex()) {
             return null;
         }
-        for (int i = 0; i < logEntries.size(); i++){
+        for (int i = 0; i < logEntries.size(); i++) {
             if (logEntries.get(i).getIndex() == commitInx) {
                 return logEntries.get(i);
             }
@@ -577,7 +755,7 @@ public class RaftServer {
         return null;
     }
 
-    public Map<Integer,Long> getServedClients() {
+    public Map<Integer, Long> getServedClients() {
         return clientServerMap;
     }
 
@@ -586,6 +764,10 @@ public class RaftServer {
         clientServerMap.putAll(servedClients);
     }
 
+    /**
+     * Commit the entry at given index
+     * @param indexToCommit
+     */
     public void commitEntry(int indexToCommit) {
         LogEntry entry = getLogEntry(indexToCommit);
         if (entry != null) {
@@ -598,6 +780,10 @@ public class RaftServer {
         }
     }
 
+    /**
+     * Convert to follower state
+     * @param request
+     */
     public void convertToFollower(ServerRequest request) {
         setCurrentTerm(request.getTerm());
         setState(ServerState.FOLLOWER);

@@ -78,7 +78,7 @@ public class SnapshotTask implements Runnable {
                 bw.write(SnapshotManager.CLIENTS);
                 bw.newLine();
                 for (Integer key : servedClients.keySet()) {
-                    bw.write(key + "\t" + servers.get(key));
+                    bw.write(key + "\t" + servedClients.get(key));
                     bw.newLine();
                 }
                 bw.flush();
@@ -87,7 +87,7 @@ public class SnapshotTask implements Runnable {
                     server.getAppendLock();
                     manager.setLastStoredIndex(lastApplied);
                     manager.setLastSnapshot(new Snapshot(lastApplied, termOfLastApplied, storage, servers, servedClients));
-                    server.cleanLogUntil(lastApplied);
+                    server.removeEntriesUntil(lastApplied);
                 } finally {
                     server.releaseAppendLock();
                 }
