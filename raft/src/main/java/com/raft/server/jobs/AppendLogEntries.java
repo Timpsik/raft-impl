@@ -39,8 +39,8 @@ public class AppendLogEntries implements Runnable {
             int nextIndex = raftServer.getNextIndex(serverId);
             LogEntry[] entries = raftServer.getLogEntriesSince(nextIndex);
             if (entries != null) {
-                AppendEntriesRequest r = new AppendEntriesRequest(raftServer.getCurrentTerm().get(), raftServer.getServerId(),
-                        raftServer.getLogEntryTerm(nextIndex - 1), nextIndex - 1, raftServer.getCommitIndex().get(), entries);
+                AppendEntriesRequest r = new AppendEntriesRequest(raftServer.getCurrentTerm(), raftServer.getServerId(),
+                        raftServer.getLogEntryTerm(nextIndex - 1), nextIndex - 1, raftServer.getCommitIndex(), entries);
                 logger.info("Sending log entries request to " + address);
                 AppendEntriesResponse response = (AppendEntriesResponse) raftServer.getServerConnection(serverId).sendRequestToServer(r);
                 if (response == null) {
@@ -49,7 +49,7 @@ public class AppendLogEntries implements Runnable {
                     countDownLatch.countDown();
                     return;
                 }
-                if (r.getTerm() != raftServer.getCurrentTerm().get()) {
+                if (r.getTerm() != raftServer.getCurrentTerm()) {
                     countDownLatch.countDown();
                     return;
                 }
@@ -59,21 +59,21 @@ public class AppendLogEntries implements Runnable {
                     raftServer.setMatchIndex(serverId, nextIndex + entries.length - 1);
                     successCounter.incrementAndGet();
                 } else {
-                    if (response.getTerm() <= raftServer.getCurrentTerm().get()) {
+                    if (response.getTerm() <= raftServer.getCurrentTerm()) {
                         logger.info("log append failed to " + address);
                         while (!response.isSuccess()) {
                             if (raftServer.getState() == ServerState.LEADER) {
                                 nextIndex = raftServer.reduceAndGetNextIndex(serverId);
                                 entries = raftServer.getLogEntriesSince(nextIndex);
                                 if (entries != null) {
-                                    r = new AppendEntriesRequest(raftServer.getCurrentTerm().get(), raftServer.getServerId(),
-                                            raftServer.getLogEntryTerm(nextIndex - 1), nextIndex - 1, raftServer.getCommitIndex().get(), entries);
+                                    r = new AppendEntriesRequest(raftServer.getCurrentTerm(), raftServer.getServerId(),
+                                            raftServer.getLogEntryTerm(nextIndex - 1), nextIndex - 1, raftServer.getCommitIndex(), entries);
                                     response = (AppendEntriesResponse) raftServer.getServerConnection(serverId).sendRequestToServer(r);
-                                    if (r.getTerm() != raftServer.getCurrentTerm().get()) {
+                                    if (r.getTerm() != raftServer.getCurrentTerm()) {
                                         countDownLatch.countDown();
                                         return;
                                     }
-                                    if (response.getTerm() > raftServer.getCurrentTerm().get()) {
+                                    if (response.getTerm() > raftServer.getCurrentTerm()) {
                                         logger.warn("Log append failed to " + address + ", not leader anymore");
                                         raftServer.setState(ServerState.FOLLOWER);
                                         break;
@@ -84,10 +84,10 @@ public class AppendLogEntries implements Runnable {
                                     if (lastSnapshot == null) {
                                         logger.warn("Entries and snapshots not existing, nothing to bring the follower back");
                                     } else {
-                                        InstallSnapshotRequest req = new InstallSnapshotRequest(raftServer.getCurrentTerm().get(), raftServer.getLeaderId(), lastSnapshot);
+                                        InstallSnapshotRequest req = new InstallSnapshotRequest(raftServer.getCurrentTerm(), raftServer.getLeaderId(), lastSnapshot);
                                         logger.info("Sending snapshot to " + address);
                                         InstallSnapshotResponse resp = (InstallSnapshotResponse) raftServer.getServerConnection(serverId).sendRequestToServer(req);
-                                        if (r.getTerm() != raftServer.getCurrentTerm().get()) {
+                                        if (r.getTerm() != raftServer.getCurrentTerm()) {
                                             countDownLatch.countDown();
                                             return;
                                         }
@@ -97,7 +97,7 @@ public class AppendLogEntries implements Runnable {
                                             countDownLatch.countDown();
                                             return;
                                         }
-                                        if (resp.getTerm() > raftServer.getCurrentTerm().get()) {
+                                        if (resp.getTerm() > raftServer.getCurrentTerm()) {
                                             countDownLatch.countDown();
                                             return;
                                         } else {
@@ -106,14 +106,15 @@ public class AppendLogEntries implements Runnable {
                                             nextIndex = lastSnapshot.getLastLogIndex() + 1;
                                             entries = raftServer.getLogEntriesSince(lastSnapshot.getLastLogIndex() + 1);
                                             if (entries != null) {
-                                                r = new AppendEntriesRequest(raftServer.getCurrentTerm().get(), raftServer.getServerId(),
-                                                        raftServer.getLogEntryTerm(lastSnapshot.getLastLogIndex()), lastSnapshot.getLastLogIndex(), raftServer.getCommitIndex().get(), entries);
+                                                r = new AppendEntriesRequest(raftServer.getCurrentTerm(), raftServer.getServerId(),
+                                                        raftServer.getLogEntryTerm(lastSnapshot.getLastLogIndex()), lastSnapshot.getLastLogIndex(),
+                                                        raftServer.getCommitIndex(), entries);
                                                 response = (AppendEntriesResponse) raftServer.getServerConnection(serverId).sendRequestToServer(r);
-                                                if (r.getTerm() != raftServer.getCurrentTerm().get()) {
+                                                if (r.getTerm() != raftServer.getCurrentTerm()) {
                                                     countDownLatch.countDown();
                                                     return;
                                                 }
-                                                if (response.getTerm() > raftServer.getCurrentTerm().get()) {
+                                                if (response.getTerm() > raftServer.getCurrentTerm()) {
                                                     logger.warn("Log append failed to " + address + ", not leader anymore");
                                                     raftServer.setState(ServerState.FOLLOWER);
                                                     break;
@@ -141,10 +142,10 @@ public class AppendLogEntries implements Runnable {
                 if (lastSnapshot == null) {
                     logger.warn("Entries and snapshots not existing, nothing to bring the follower back");
                 } else {
-                    InstallSnapshotRequest r = new InstallSnapshotRequest(raftServer.getCurrentTerm().get(), raftServer.getLeaderId(), lastSnapshot);
+                    InstallSnapshotRequest r = new InstallSnapshotRequest(raftServer.getCurrentTerm(), raftServer.getLeaderId(), lastSnapshot);
                     logger.info("Sending snapshot to " + address);
                     InstallSnapshotResponse response = (InstallSnapshotResponse) raftServer.getServerConnection(serverId).sendRequestToServer(r);
-                    if (r.getTerm() != raftServer.getCurrentTerm().get()) {
+                    if (r.getTerm() != raftServer.getCurrentTerm()) {
                         countDownLatch.countDown();
                         return;
                     }
@@ -154,7 +155,7 @@ public class AppendLogEntries implements Runnable {
                         countDownLatch.countDown();
                         return;
                     }
-                    if (response.getTerm() > raftServer.getCurrentTerm().get()) {
+                    if (response.getTerm() > raftServer.getCurrentTerm()) {
                         countDownLatch.countDown();
                         return;
                     } else {

@@ -10,17 +10,18 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.Socket;
 
-public class RaftServerConnection {
+/**
+ * Output connection to other server
+ */
+public class ServerOutConnection {
 
-    private static Logger logger = LogManager.getLogger(RaftServerConnection.class);
-    private final int serverId;
+    private static Logger logger = LogManager.getLogger(ServerOutConnection.class);
     private final String serverAddress;
     private Socket socket;
     private ObjectInputStream in;
     private ObjectOutputStream out;
 
-    public RaftServerConnection(int serverId, String serverAddress) {
-        this.serverId = serverId;
+    public ServerOutConnection(String serverAddress) {
         this.serverAddress = serverAddress;
         try {
             initialize();
@@ -30,6 +31,10 @@ public class RaftServerConnection {
         }
     }
 
+    /**
+     * Try to make the connection to other server
+     * @throws IOException
+     */
     private void initialize() throws IOException {
         socket = new Socket(serverAddress.split(":")[0], Integer.parseInt(serverAddress.split(":")[1]));
         socket.setKeepAlive(true);
@@ -37,6 +42,9 @@ public class RaftServerConnection {
         in = new ObjectInputStream(socket.getInputStream());
     }
 
+    /**
+     * Close the connection to other server
+     */
     private void closeConnections() {
         try {
             if (socket != null) {
@@ -55,6 +63,11 @@ public class RaftServerConnection {
         }
     }
 
+    /**
+     * Send request to other server
+     * @param request
+     * @return
+     */
     public synchronized ServerResponse sendRequestToServer(ServerRequest request){
         try {
             if (socket == null) {

@@ -78,7 +78,7 @@ public class SnapshotManager {
      * @return true if new entries have been entries since last snapshot
      */
     public boolean isStateChanged() {
-        return server.getLastApplied().get() > lastStoredIndex;
+        return server.getLastApplied() > lastStoredIndex;
     }
 
     /**
@@ -143,9 +143,9 @@ public class SnapshotManager {
                 server.setMachineState(data);
                 server.setServersState(servers);
                 server.setTermOfLastApplied(lastTerm);
-                server.getCurrentTerm().set(lastTerm);
-                server.getLastApplied().set(lastApplied);
-                server.getCommitIndex().set(lastApplied);
+                server.setCurrentTerm(lastTerm);
+                server.setLastApplied(lastApplied);
+                server.setCommitIndex(lastApplied);
                 server.setNextIndex(lastApplied + 1);
                 server.setServedClients(servedClients);
                 lastStoredIndex = lastApplied;

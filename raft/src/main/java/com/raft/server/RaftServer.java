@@ -20,14 +20,16 @@ import java.util.concurrent.locks.ReentrantLock;
 import com.raft.requests.*;
 import com.raft.server.conf.Configuration;
 import com.raft.server.conf.ServerState;
-import com.raft.server.connection.RaftConnection;
-import com.raft.server.connection.RaftServerConnection;
+import com.raft.server.connection.IncomingConnection;
+import com.raft.server.connection.ServerOutConnection;
 import com.raft.server.entries.*;
 import com.raft.server.jobs.AppendLogEntries;
 import com.raft.server.jobs.ElectionTimeoutChecker;
 import com.raft.server.jobs.Heartbeat;
 import com.raft.server.jobs.ReadHeartbeat;
 import com.raft.server.jobs.RequestVote;
+import com.raft.server.rpc.InstallSnapshotRequest;
+import com.raft.server.rpc.ServerRequest;
 import com.raft.server.snapshot.Snapshot;
 import com.raft.server.snapshot.SnapshotManager;
 import org.apache.logging.log4j.LogManager;
@@ -70,7 +72,7 @@ public class RaftServer {
 
     private ConcurrentMap<Integer, Long> clientServerMap = new ConcurrentHashMap<>();
 
-    private Map<Integer, RaftServerConnection> connections = new HashMap<>();
+    private Map<Integer, ServerOutConnection> connections = new HashMap<>();
 
     private final SnapshotManager snapshotManager;
 
@@ -89,7 +91,7 @@ public class RaftServer {
                     if (logger.isDebugEnabled()) {
                         logger.debug("Server ID: " + id + " is at address " + serverStrings[id]);
                     }
-                    connections.put(id, new RaftServerConnection(id, serverStrings[id]));
+                    connections.put(id, new ServerOutConnection(serverStrings[id]));
                 }
             }
         } else {
@@ -98,7 +100,7 @@ public class RaftServer {
                     if (logger.isDebugEnabled()) {
                         logger.debug("Server ID: " + i + " is at address " + serverStrings[i]);
                     }
-                    connections.put(i, new RaftServerConnection(i, serverStrings[i]));
+                    connections.put(i, new ServerOutConnection(serverStrings[i]));
                 }
                 servers.put(i, serverStrings[i]);
             }
@@ -118,8 +120,8 @@ public class RaftServer {
         try {
             ServerSocket socket = new ServerSocket(port);
             while (true) {
-                RaftConnection raftConnection = new RaftConnection(socket.accept(), this);
-                Thread thread = new Thread(raftConnection);
+                IncomingConnection incomingConnection = new IncomingConnection(socket.accept(), this);
+                Thread thread = new Thread(incomingConnection);
                 thread.start();
             }
         } catch (IOException e) {
@@ -195,7 +197,7 @@ public class RaftServer {
     public AckResponse modifyLog(ChangeStateRequest r) {
         Long lastServedRequests = clientServerMap.getOrDefault(r.getClientId(), null);
         if (lastServedRequests != null && lastServedRequests > r.getRequestNr()) {
-            return new AckResponse(getLeaderAddress(), true);
+            return new AckResponse(getLeaderAddress(), false, ErrorCause.ALREADY_PROCESSED);
         }
         LogEntry newEntry = new LogEntry(currentTerm.get(), new StateChange(r.getVar(), Integer.toString(r.getValue())), r.getClientId(), r.getRequestNr(), nextIndex);
         nextIndex++;
@@ -246,8 +248,12 @@ public class RaftServer {
         votes.set(1);
     }
 
-    public AtomicLong getCurrentTerm() {
-        return currentTerm;
+    public long getCurrentTerm() {
+        return currentTerm.get();
+    }
+
+    public void setCurrentTerm(long currentTerm) {
+        this.currentTerm.set(currentTerm);
     }
 
     public AtomicLong getVotedFor() {
@@ -258,12 +264,20 @@ public class RaftServer {
         return serverId;
     }
 
-    public AtomicInteger getCommitIndex() {
-        return commitIndex;
+    public int getCommitIndex() {
+        return commitIndex.get();
     }
 
-    public AtomicInteger getLastApplied() {
-        return lastApplied;
+    public void setCommitIndex(int commitIndex) {
+        this.commitIndex.set(commitIndex);
+    }
+
+    public int getLastApplied() {
+        return lastApplied.get();
+    }
+
+    public void setLastApplied(int lastApplied) {
+        this.lastApplied.set(lastApplied);
     }
 
     public long getLastLogEntryTerm() {
@@ -404,7 +418,7 @@ public class RaftServer {
 
     }
 
-    public RaftServerConnection getServerConnection(int serverId) {
+    public ServerOutConnection getServerConnection(int serverId) {
         return connections.get(serverId);
     }
 
@@ -570,5 +584,24 @@ public class RaftServer {
     public void setServedClients(Map<Integer, Long> servedClients) {
         clientServerMap.clear();
         clientServerMap.putAll(servedClients);
+    }
+
+    public void commitEntry(int indexToCommit) {
+        LogEntry entry = getLogEntry(indexToCommit);
+        if (entry != null) {
+            applyStateChange(entry.getChange());
+            setCommitIndex(indexToCommit);
+            setLastApplied(indexToCommit);
+            setTermOfLastApplied(entry.getTerm());
+        } else {
+            logger.warn("Entry not in log");
+        }
+    }
+
+    public void convertToFollower(ServerRequest request) {
+        setCurrentTerm(request.getTerm());
+        setState(ServerState.FOLLOWER);
+        setLeaderId(request.getSenderId());
+        setLastHeardFromLeader(System.nanoTime());
     }
 }

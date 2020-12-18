@@ -1,5 +1,8 @@
 package com.raft.server.entries;
 
+/**
+ * Remove server from configuration
+ */
 public class RemoveRaftServerChange extends Change {
 
     private int serverId;

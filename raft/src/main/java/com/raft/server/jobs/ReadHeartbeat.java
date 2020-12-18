@@ -34,8 +34,8 @@ public class ReadHeartbeat implements Runnable {
     @Override
     public void run() {
         if (raftServer.getState() == ServerState.LEADER) {
-            AppendEntriesRequest r = new AppendEntriesRequest(raftServer.getCurrentTerm().get(), raftServer.getServerId(),
-                    raftServer.getLastLogEntryTerm(), raftServer.getNextIndex() - 1, raftServer.getCommitIndex().get(), new LogEntry[0]);
+            AppendEntriesRequest r = new AppendEntriesRequest(raftServer.getCurrentTerm(), raftServer.getServerId(),
+                    raftServer.getLastLogEntryTerm(), raftServer.getNextIndex() - 1, raftServer.getCommitIndex(), new LogEntry[0]);
             logger.info("Sending log entries request to " + address);
             AppendEntriesResponse response = (AppendEntriesResponse) raftServer.getServerConnection(serverId).sendRequestToServer(r);
             if (response == null) {
@@ -44,7 +44,7 @@ public class ReadHeartbeat implements Runnable {
                 countDownLatch.countDown();
                 return;
             }
-            if (response.getTerm() != raftServer.getCurrentTerm().get()) {
+            if (response.getTerm() != raftServer.getCurrentTerm()) {
                 countDownLatch.countDown();
                 return;
             }
@@ -52,7 +52,7 @@ public class ReadHeartbeat implements Runnable {
                 successCounter.incrementAndGet();
             } else {
                 logger.warn("Heartbeat failed to " + address);
-                if (response.getTerm() > raftServer.getCurrentTerm().get()) {
+                if (response.getTerm() > raftServer.getCurrentTerm()) {
                     raftServer.setState(ServerState.FOLLOWER);
                     return;
                 } else {
@@ -63,8 +63,8 @@ public class ReadHeartbeat implements Runnable {
                             nextIndex = raftServer.reduceAndGetNextIndex(serverId);
                             entries = raftServer.getLogEntriesSince(nextIndex);
                             logger.warn("Fixing followers logˇ, next Index is:  " + nextIndex + ", sending " + entries.length + " entries");
-                            r = new AppendEntriesRequest(raftServer.getCurrentTerm().get(), raftServer.getServerId(),
-                                    raftServer.getLogEntryTerm(nextIndex - 1), nextIndex - 1, raftServer.getCommitIndex().get(), entries);
+                            r = new AppendEntriesRequest(raftServer.getCurrentTerm(), raftServer.getServerId(),
+                                    raftServer.getLogEntryTerm(nextIndex - 1), nextIndex - 1, raftServer.getCommitIndex(), entries);
 
                             response = (AppendEntriesResponse) raftServer.getServerConnection(serverId).sendRequestToServer(r);
                             if (response == null) {
@@ -72,11 +72,11 @@ public class ReadHeartbeat implements Runnable {
                                 countDownLatch.countDown();
                                 return;
                             }
-                            if (response.getTerm() != raftServer.getCurrentTerm().get()) {
+                            if (response.getTerm() != raftServer.getCurrentTerm()) {
                                 countDownLatch.countDown();
                                 return;
                             }
-                            if (response.getTerm() > raftServer.getCurrentTerm().get()) {
+                            if (response.getTerm() > raftServer.getCurrentTerm()) {
                                 logger.warn("Log append failed to " + address + ", not leader anymore");
                                 raftServer.setState(ServerState.FOLLOWER);
                                 countDownLatch.countDown();

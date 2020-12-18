@@ -41,7 +41,7 @@ public class SnapshotTask implements Runnable {
             try {
                 // Get the lock to avoid modifications to state
                 server.getAppendLock();
-                lastApplied = server.getLastApplied().get();
+                lastApplied = server.getLastApplied();
                 termOfLastApplied = server.getTermOfLastApplied();
                 storage.putAll(server.getCurrentMachineState());
                 servers.putAll(server.getServers());

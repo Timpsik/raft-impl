@@ -2,19 +2,20 @@ package com.raft.server.rpc;
 
 import com.raft.server.snapshot.Snapshot;
 
+/**
+ * Request containing the snapshot for the follower to update itself
+ */
 public class InstallSnapshotRequest extends ServerRequest {
-    private int leaderId;
+
+
+    /**
+     * Actual snapshot containing the data
+     */
     private Snapshot snapshot;
-    private long term;
 
     public InstallSnapshotRequest(long term, int leaderId, Snapshot snapshot) {
-        super(term);
-        this.leaderId = leaderId;
+        super(term, leaderId);
         this.snapshot = snapshot;
-    }
-
-    public int getLeaderId() {
-        return leaderId;
     }
 
     public Snapshot getSnapshot() {
