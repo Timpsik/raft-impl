@@ -2,10 +2,24 @@ package com.raft.requests;
 
 import java.io.Serializable;
 
+/**
+ * Parent class for all responses returned by server to client.
+ */
 public abstract class RaftResponse implements Serializable {
 
+    /**
+     * True if request was successful
+     */
     boolean success;
+
+    /**
+     * The leader address, so that client can resend the request to leader
+     */
     String leaderAddress;
+
+    /**
+     * Cause of the request failure.
+     */
     ErrorCause cause;
 
     public RaftResponse(boolean success, String leaderAddress, ErrorCause cause) {

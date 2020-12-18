@@ -1,5 +1,8 @@
 package com.raft.requests;
 
+/**
+ * Generic repsonse returned by server.
+ */
 public class AckResponse extends RaftResponse {
 
     public AckResponse(String leaderAddress, boolean success) {

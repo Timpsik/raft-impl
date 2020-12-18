@@ -198,7 +198,7 @@ public class RaftConnection implements Runnable {
                     server.setLeaderId(request.getLeaderId());
                     server.setLastHeardFromLeader(System.nanoTime());
                     if (request.getSnapshot().getLastLogIndex() > server.getNextIndex()) {
-                        server.setMachineState(request.getSnapshot().getState());
+                        server.setMachineState(request.getSnapshot().getStorage());
                         server.setServersState(request.getSnapshot().getServersConfiguration());
                         server.setNextIndex(request.getSnapshot().getLastLogIndex() + 1);
                         server.setTermOfLastApplied(request.getSnapshot().getLastTerm());

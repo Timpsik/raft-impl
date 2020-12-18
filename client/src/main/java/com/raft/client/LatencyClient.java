@@ -1,24 +1,25 @@
 package com.raft.client;
 
-import com.raft.requests.*;
+import com.raft.requests.ChangeStateRequest;
+import com.raft.requests.ErrorCause;
+import com.raft.requests.RaftRequest;
+import com.raft.requests.RaftResponse;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import java.io.*;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.net.Socket;
 import java.util.Random;
 
 public class LatencyClient {
+    private static final Logger logger = LogManager.getLogger(LatencyClient.class);
 
     /**
      * Number of expected command line arguments
      */
-    public static final int EXPECTED_ARGUMENTS = 4;
-
-    /**
-     * Number of clients, which are created.
-     */
-    private static final int CLIENT_ID = 1;
+    public static final int EXPECTED_ARGUMENTS = 2;
 
     /**
      * Zookeeper cluster address, "serverIp1:port,serverIp2:port,...."
@@ -26,53 +27,47 @@ public class LatencyClient {
     private static final int CLUSTER_ADDRESS_IDX = 0;
 
     /**
-     * Start time of the benchmark test. Should be in future to ensure all clients are ready.
+     * Number of clients, which are created.
      */
-    private static final int START_TIME_IDX = 2;
+    private static final int CLIENT_ID = 1;
 
 
-    private final Logger logger = LogManager.getLogger(LatencyClient.class);
-
+    /**
+     * String containing all the addresses of servers separated by commas.
+     */
     private String[] clusterAddresses;
+
+    /**
+     * Address of the leader server
+     */
     private String leaderAddress = "";
+
     private Random random = new Random();
+
+    /**
+     * Id of the client, each client should have their own id.
+     */
     private final int clientId;
+
+    /**
+     * Request number of the client, increment it after every request.
+     */
     private long requestNr = 0;
-    private long benchmarkStartTime;
 
-    private final long N = 500;
+    private final long N = 1000;
 
-    public LatencyClient(String clusterAddress, int clientId, String startTime) {
-        parseAndCheckStartTime(startTime);
+    public LatencyClient(String clusterAddress, int clientId) {
         this.clusterAddresses = clusterAddress.split(",");
         this.clientId = clientId;
     }
 
     public static void main(String[] args) throws IOException {
-
-        LatencyClient raftClient = new LatencyClient(args[CLUSTER_ADDRESS_IDX], Integer.parseInt(args[CLIENT_ID]), args[START_TIME_IDX]);
-        raftClient.start();
-    }
-
-
-    /**
-     * Check if the start time is long and start is in the future,
-     * otherwise it isn't possible to calculate correct throughput.
-     *
-     * @param startTimeString Benchmark start time in String
-     */
-    private void parseAndCheckStartTime(String startTimeString) {
-        try {
-            benchmarkStartTime = Long.parseLong(startTimeString);
-            if (System.currentTimeMillis() > benchmarkStartTime) {
-                throw new IllegalArgumentException("Benchmark start time is in the past " +
-                        "Current time: " + System.currentTimeMillis() + ", Start: " + benchmarkStartTime);
-            }
-        } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("Argument at index " + START_TIME_IDX +
-                    " is expected to be long. Given: " + startTimeString +
-                    " . It is the start time of benchmark.");
+        if (args.length != EXPECTED_ARGUMENTS) {
+            logger.error("Wrong number of arguments given. Expected 2, but got " + args.length);
+            return;
         }
+        LatencyClient raftClient = new LatencyClient(args[CLUSTER_ADDRESS_IDX], Integer.parseInt(args[CLIENT_ID]));
+        raftClient.start();
     }
 
     private void start() {
@@ -82,27 +77,24 @@ public class LatencyClient {
         ObjectInputStream in = null;
         try {
             int i = 0;
-            boolean started = false;
             while (i < N) {
-                if (!started && System.currentTimeMillis() > benchmarkStartTime) {
-                    started = true;
-                } else {
-                    continue;
-                }
                 String serverToConnect = leaderAddress;
+                // Select random server to connect
                 if ("".equals(serverToConnect)) {
                     serverToConnect = clusterAddresses[random.nextInt(clusterAddresses.length)];
                 }
 
                 logger.info("Connecting to " + serverToConnect);
-                RaftRequest r = new ChangeStateRequest("" + clientId, 2,clientId, requestNr);
+                // Make the variable storing request
+                RaftRequest r = new ChangeStateRequest("" + clientId, 2, clientId, requestNr);
                 socket = new Socket(serverToConnect.split(":")[0], Integer.parseInt(serverToConnect.split(":")[1]));
                 out = new ObjectOutputStream(socket.getOutputStream());
                 requestNr++;
                 out.writeObject(r);
                 in = new ObjectInputStream(socket.getInputStream());
                 RaftResponse response = (RaftResponse) in.readObject();
-                while(!response.isSuccess() && response.getCause() == ErrorCause.NOT_LEADER) {
+                // Resend the request if it wasn't sent to leader
+                while (!response.isSuccess() && response.getCause() == ErrorCause.NOT_LEADER) {
                     logger.info("Did not send the request to leader, re-send");
                     try {
                         out.close();
@@ -126,9 +118,10 @@ public class LatencyClient {
                 logger.info("Request was successful");
                 i++;
             }
+            // print the end time of finishing requests
             logger.warn(System.currentTimeMillis());
         } catch (IOException | ClassNotFoundException e) {
-            logger.info("Error: ", e);
+            logger.warn("Error: ", e);
         } finally {
             if (socket != null) {
                 try {
@@ -140,7 +133,7 @@ public class LatencyClient {
                     }
                     socket.close();
                 } catch (IOException e) {
-                    e.printStackTrace();
+                    logger.warn("Exception when closing socket: ", e);
                 }
             }
         }

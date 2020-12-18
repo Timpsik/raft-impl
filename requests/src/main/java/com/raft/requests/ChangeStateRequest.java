@@ -1,9 +1,18 @@
 package com.raft.requests;
 
-import java.io.Serializable;
-
+/**
+ * Store a variable in the Raft cluster
+ */
 public class ChangeStateRequest extends RaftRequest {
+
+    /**
+     * Name of the variable
+     */
     private String var;
+
+    /**
+     * Integer value of the variable
+     */
     private int value;
 
     public ChangeStateRequest(String var, int value, int clientId, long requestNr) {

@@ -562,4 +562,13 @@ public class RaftServer {
         }
         return null;
     }
+
+    public Map<Integer,Long> getServedClients() {
+        return clientServerMap;
+    }
+
+    public void setServedClients(Map<Integer, Long> servedClients) {
+        clientServerMap.clear();
+        clientServerMap.putAll(servedClients);
+    }
 }
