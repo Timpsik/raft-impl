@@ -242,8 +242,8 @@ public class RaftServer {
      * @return new time in ms to check if the leader is alive
      */
     public long generateNewElectionTimeout() {
-        //electionTimeout = generator.nextInt(Configuration.maxElectionTimeout - Configuration.minElectionTimeout)
-         //       + Configuration.minElectionTimeout;
+        electionTimeout = generator.nextInt(Configuration.maxElectionTimeout - Configuration.minElectionTimeout)
+                + Configuration.minElectionTimeout;
         return electionTimeout;
     }
 
