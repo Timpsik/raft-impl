@@ -6,10 +6,10 @@ if [ "$#" -ne 3 ]; then
 	exit 2
 fi
 
-## Number of Zookeeper servers
+## Number of Raft servers
 numberOfServers=$1;
 if [ $numberOfServers -lt 1 ]; then
-	echo "Atleast one node should be requested for Zookeeper cluster. Currently, you asked the cluster size to be $numberOfServers."
+	echo "Atleast one node should be requested for Raft cluster. Currently, you asked the cluster size to be $numberOfServers."
 	exit 2
 fi
 echo "Number of nodes requested: $1";
@@ -51,7 +51,7 @@ do
 done
 
 
-## Create Zookeeper configurations
+## Copy Raft jars on to nodes
 for (( i=1; i <= $numberOfServers; i++))
 do
 	echo "Establishing connection to ${nodeArray[$i-1]}"
@@ -70,7 +70,7 @@ done
 ## From https://stackoverflow.com/a/17841619
 function join_by { local d=$1; shift; local f=$1; shift; printf %s "$f" "${@/#/$d}"; }
 
-## Get the Zookeeper cluster address
+## Get the Raft cluster address
 clusterAddress=$(join_by ":2181," $nodes);
 clusterAddress+=":2181";
 
@@ -81,10 +81,10 @@ for (( i=1; i <= $numberOfServers; i++))
 do
 	echo "Starting server in node ${nodeArray[$i-1]}"
 ssh ${nodeArray[$i-1]} <<-EOF
-	cd /local/$username
+	cd /local/$username 
 	nohup java -jar /local/$username/raft_deploy/raft-0.0.jar   $clusterAddress $(($i-1)) &> /local/$username/output.log &
 EOF
 
 done
 
-echo "Zookeeper cluster should be started"
+echo "Raft cluster should be started"

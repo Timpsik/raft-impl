@@ -2,7 +2,7 @@
 
 ## Check if 3 arguments are given
 if [ "$#" -ne 1 ]; then
-	echo "Illegal number of parameters, 3 expected. Number of clients on node, username and client write rate."
+	echo "Illegal number of parameters, 1 expected. Username"
 	exit 2
 fi
 
@@ -11,24 +11,17 @@ username=$1;
 
 module load prun
 
-## Get Zookeeper nodes, they are since 9th column, expect them to be the first reservation of the user.
-zookeeperNodes=$(preserve -llist | grep $username | sed -n '1p'| awk '{ for (i=9; i<=NF; i++) print $i }')
+## Get Raft nodes, they are since 9th column, expect them to be the first reservation of the user.
+raftNodes=$(preserve -llist | grep $username | sed -n '1p'| awk '{ for (i=9; i<=NF; i++) print $i }')
 
 ## Get the current time since Epoch in milliseconds
 currentTime=$(date +%s%3N);
 
-## Start the benchmark in 1 minute from now
-let startTime=$currentTime+1000*60;
-
-
-echo "Benchmark Start time: $(date -d @"$((startTime/1000))")";
-echo $currentTime
-
 ## From https://stackoverflow.com/a/17841619
 function join_by { local d=$1; shift; local f=$1; shift; printf %s "$f" "${@/#/$d}"; }
 
-## Get the Zookeeper cluster address
-clusterAddress=$(join_by ":2181," $zookeeperNodes);
+## Get the Raft cluster address
+clusterAddress=$(join_by ":2181," $raftNodes);
 clusterAddress+=":2181";
 
 ## Reserve nodes for clients
@@ -41,7 +34,7 @@ sleep 5
 reservationState=$(preserve -llist | grep $username | sed -n '2p' | awk '{print $7}')
 
 if [ "$reservationState" = "PD" ]; then
-	echo " There aren't 1 nodes available to be reserved for clients, try again later."
+	echo " There isn't 1 node available to be reserved for clients, try again later."
 	scancel -u $username -t "PD"
 	exit 2
 fi
@@ -53,14 +46,17 @@ clients=10
 echo "Cluster address: $clusterAddress";
 echo "Number of total clients: $clients"
 
+echo "Benchmark Start time: $(date -d @"$((startTime/1000))")";
+echo $currentTime
+
 ## Start the clients in each node
 for node in ${nodes}
 do
 echo "Connecting to node $node"
-## Copy the Zookeeper client
+## Copy the Raft client
 ## Delete the data from previous run
 ## Create the directory again
-## Start the clients
+## Start the clients, give cluster address and id of the client as parameters
 ssh $node<<-EOF
 	if [ ! -d "/local/$username" ]; then
 		mkdir "/local/$username"
@@ -73,7 +69,7 @@ ssh $node<<-EOF
 	for (( i=0; i < 10; i++))
 	do
 		echo "starting client \${i}"
-		nohup java -jar /local/$username/client_deploy/client-0.0.jar   $clusterAddress \$i $startTime &> "/local/${username}/output_\${i}.log" &
+		nohup java -jar /local/$username/client_deploy/client-0.0.jar   $clusterAddress \$i &> "/local/${username}/output_\${i}.log" &
 	done
 EOF
 done
